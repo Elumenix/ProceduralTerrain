@@ -1,3 +1,4 @@
+using System;
 using Unity.VisualScripting;
 using UnityEngine;
 
@@ -9,6 +10,12 @@ public class MeshGenerator : MonoBehaviour
     public int mapWidth;
     public int mapHeight;
     public float noiseScale;
+    public int octaves;
+    [Range(0,1)]
+    public float persistence;
+    public float lacunarity;
+    public int seed;
+    public Vector2 offset;
     
     // Object reference variables
     private Renderer textureRenderer;
@@ -29,6 +36,15 @@ public class MeshGenerator : MonoBehaviour
         GenerateMap();
     }
 
+    private void OnValidate()
+    {
+        if (mapWidth < 1) mapWidth = 1;
+        if (mapHeight < 1) mapHeight = 1;
+        if (noiseScale <= 0) noiseScale = 0.0011f;
+        if (lacunarity < 1) lacunarity = 1;
+        if (octaves < 1) octaves = 1;
+    }
+
     public void GenerateMap()
     {
         
@@ -41,10 +57,6 @@ public class MeshGenerator : MonoBehaviour
             textureRenderer = GetComponent<MeshRenderer>();
         }
         #endif
-        
-        if (mapWidth < 1) mapWidth = 1;
-        if (mapHeight < 1) mapHeight = 1;
-        if (noiseScale < 1) noiseScale = 1;
         
         CreateShape();
         UpdateMesh();
@@ -86,7 +98,7 @@ public class MeshGenerator : MonoBehaviour
 
     void SetTexture()
     {
-        float[,] noiseMap = Noise.GenerateNoiseMap(mapWidth, mapHeight, noiseScale);
+        float[,] noiseMap = Noise.GenerateNoiseMap(mapWidth, mapHeight, seed, noiseScale, octaves, persistence, lacunarity, offset);
         int width = noiseMap.GetLength(0);
         int height = noiseMap.GetLength(1);
         
@@ -108,6 +120,6 @@ public class MeshGenerator : MonoBehaviour
 
 
         textureRenderer.sharedMaterial.mainTexture = texture;
-        textureRenderer.transform.localScale = new Vector3(width, 1, height);
+        //textureRenderer.transform.localScale = new Vector3(width, 1, height);
     }
 }
