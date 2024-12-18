@@ -5,6 +5,11 @@ using UnityEngine;
 [RequireComponent(typeof(MeshRenderer))]
 public class MeshGenerator : MonoBehaviour
 {
+    // Variables Changeable within the editor
+    public int mapWidth;
+    public int mapHeight;
+    public float noiseScale;
+    
     // Object reference variables
     private Renderer textureRenderer;
     private Mesh mesh;
@@ -20,7 +25,26 @@ public class MeshGenerator : MonoBehaviour
         mesh = new Mesh();
         GetComponent<MeshFilter>().mesh = mesh;
         textureRenderer = GetComponent<MeshRenderer>();
+        
+        GenerateMap();
+    }
 
+    public void GenerateMap()
+    {
+        
+        #if UNITY_EDITOR
+        // The only case where this should happen
+        if (!mesh)
+        {
+            mesh = new Mesh();
+            GetComponent<MeshFilter>().mesh = mesh;
+            textureRenderer = GetComponent<MeshRenderer>();
+        }
+        #endif
+        
+        if (mapWidth < 1) mapWidth = 1;
+        if (mapHeight < 1) mapHeight = 1;
+        if (noiseScale < 1) noiseScale = 1;
         
         CreateShape();
         UpdateMesh();
@@ -62,28 +86,28 @@ public class MeshGenerator : MonoBehaviour
 
     void SetTexture()
     {
-        // Temp variables
-        int width = 200;
-        int height = 200;
+        float[,] noiseMap = Noise.GenerateNoiseMap(mapWidth, mapHeight, noiseScale);
+        int width = noiseMap.GetLength(0);
+        int height = noiseMap.GetLength(1);
         
-        Texture2D texture = new Texture2D(width, height);
+        
+        Texture2D texture = new(width, height);
         Color[] colorMap = new Color[width * height];
 
         // Trying to set the texture as perlin noise
-        for (int y = 0; y < height; y++)
+        for (int x = 0; x < width; x++)
         {
-            for (int x = 0; x < width; x++)
+            for (int y = 0; y < height; y++)
             {
-                float xCoord = (float)x / width * 3f; 
-                float yCoord = (float)y / height * 3f; 
-                float sample = Mathf.PerlinNoise(xCoord, yCoord); 
-                colorMap[y * width + x] = Color.Lerp(Color.black, Color.white, sample);
+                colorMap[y * width + x] = Color.Lerp(Color.black, Color.white, noiseMap[x, y]);
             }
         }
         
         texture.SetPixels(colorMap);
         texture.Apply();
 
+
         textureRenderer.sharedMaterial.mainTexture = texture;
+        textureRenderer.transform.localScale = new Vector3(width, 1, height);
     }
 }
