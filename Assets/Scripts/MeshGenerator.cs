@@ -10,9 +10,11 @@ public class MeshGenerator : MonoBehaviour
     public int mapWidth;
     public int mapHeight;
     public float noiseScale;
+    [Range(1,6)]
     public int octaves;
     [Range(0,1)]
     public float persistence;
+    [Range(1,3)]
     public float lacunarity;
     public int seed;
     public Vector2 offset;
@@ -42,7 +44,6 @@ public class MeshGenerator : MonoBehaviour
         if (mapHeight < 1) mapHeight = 1;
         if (noiseScale <= 0) noiseScale = 0.0011f;
         if (lacunarity < 1) lacunarity = 1;
-        if (octaves < 1) octaves = 1;
     }
 
     public void GenerateMap()
