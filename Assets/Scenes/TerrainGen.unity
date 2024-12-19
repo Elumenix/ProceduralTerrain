@@ -150,14 +150,46 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7711aeac182e14a4b8e2442bda75a93d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  mapWidth: 99
-  mapHeight: 98
-  noiseScale: 33.9
-  octaves: 6
-  persistence: 0.586
-  lacunarity: 2.449
-  seed: 57
-  offset: {x: 67.8, y: 37.7}
+  drawMode: 1
+  mapWidth: 100
+  mapHeight: 100
+  noiseScale: 50.05
+  octaves: 5
+  persistence: 0.5
+  lacunarity: 2
+  seed: 92
+  offset: {x: -29.4, y: 6.51}
+  regions:
+  - name: Very Deep Water
+    height: 0.15
+    color: {r: 0.043120332, g: 0.17862219, b: 0.5377358, a: 1}
+  - name: Deep Water
+    height: 0.3
+    color: {r: 0.018378438, g: 0.29176274, b: 0.5566038, a: 1}
+  - name: Water
+    height: 0.4
+    color: {r: 0.17421682, g: 0.44994602, b: 0.8207547, a: 1}
+  - name: Sand
+    height: 0.45
+    color: {r: 0.804281, g: 0.8113208, b: 0.24110004, a: 1}
+  - name: Low Land
+    height: 0.6
+    color: {r: 0.2280383, g: 0.8867924, b: 0.16313636, a: 1}
+  - name: High Land
+    height: 0.7
+    color: {r: 0.07524917, g: 0.8396226, b: 0.08229406, a: 1}
+  - name: Rock Face
+    height: 0.8
+    color: {r: 0.5566038, g: 0.4020937, b: 0.2756764, a: 1}
+  - name: Mountain
+    height: 0.9
+    color: {r: 0.4056604, g: 0.333507, b: 0.15881987, a: 1}
+  - name: Snow
+    height: 0.95
+    color: {r: 0.9056604, g: 0.9056604, b: 0.9056604, a: 1}
+  - name: Peak
+    height: 1
+    color: {r: 0.8584906, g: 0.8584906, b: 0.8584906, a: 1}
 --- !u!33 &100316459
 MeshFilter:
   m_ObjectHideFlags: 0
@@ -165,7 +197,7 @@ MeshFilter:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 100316457}
-  m_Mesh: {fileID: 476797131}
+  m_Mesh: {fileID: 148236433}
 --- !u!23 &100316460
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -226,7 +258,7 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!43 &476797131
+--- !u!43 &148236433
 Mesh:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}

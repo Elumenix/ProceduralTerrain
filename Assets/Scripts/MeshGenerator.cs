@@ -6,7 +6,14 @@ using UnityEngine;
 [RequireComponent(typeof(MeshRenderer))]
 public class MeshGenerator : MonoBehaviour
 {
+    public enum DrawMode
+    {
+        noiseMap,
+        colorMap
+    };
+    
     // Variables Changeable within the editor
+    public DrawMode drawMode;
     public int mapWidth;
     public int mapHeight;
     public float noiseScale;
@@ -18,6 +25,8 @@ public class MeshGenerator : MonoBehaviour
     public float lacunarity;
     public int seed;
     public Vector2 offset;
+
+    public TerrainType[] regions;
     
     // Object reference variables
     private Renderer textureRenderer;
@@ -105,6 +114,8 @@ public class MeshGenerator : MonoBehaviour
         
         
         Texture2D texture = new(width, height);
+        texture.filterMode = FilterMode.Point;
+        texture.wrapMode = TextureWrapMode.Clamp;
         Color[] colorMap = new Color[width * height];
 
         // Trying to set the texture as perlin noise
@@ -112,7 +123,23 @@ public class MeshGenerator : MonoBehaviour
         {
             for (int y = 0; y < height; y++)
             {
-                colorMap[y * width + x] = Color.Lerp(Color.black, Color.white, noiseMap[x, y]);
+                // How to draw the map
+                if (drawMode == DrawMode.noiseMap)
+                {
+                    colorMap[y * width + x] = Color.Lerp(Color.black, Color.white, noiseMap[x, y]);
+                }
+                else if (drawMode == DrawMode.colorMap)
+                {
+                    float currentHeight = noiseMap[x, y];
+                    for (int i = 0; i < regions.Length; i++)
+                    {
+                        if (currentHeight <= regions[i].height)
+                        {
+                            colorMap[y * width + x] = regions[i].color;
+                            break;
+                        }
+                    }
+                }
             }
         }
         

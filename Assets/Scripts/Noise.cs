@@ -31,12 +31,12 @@ public static class Noise
                 for (int i = 0; i < octaves; i++)
                 {
                     // Offset parallaxes the noise
-                    float sampleX = (x-midPoint.x) / scale * frequency - offsets[i].x;
-                    float sampleY = (y-midPoint.y) / scale * frequency - offsets[i].y;
+                    //float sampleX = (x-midPoint.x) / scale * frequency - offsets[i].x;
+                    //float sampleY = (y-midPoint.y) / scale * frequency - offsets[i].y;
                     
                     // true offset
-                    //float sampleX = ((x-midPoint.x) / scale - offsets[i].x)* frequency;
-                    //float sampleY = ((y-midPoint.y) / scale - offsets[i].y) * frequency;
+                    float sampleX = ((x-midPoint.x) / scale + offsets[i].x)* frequency;
+                    float sampleY = ((y-midPoint.y) / scale + offsets[i].y) * frequency;
         
                     // Ranges from -1 to 1
                     float perlinValue = Mathf.PerlinNoise(sampleX, sampleY) * 2 - 1;
