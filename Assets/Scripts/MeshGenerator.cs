@@ -81,6 +81,8 @@ public class MeshGenerator : MonoBehaviour
         vertices = new Vector3[(mapWidth + 1) * (mapHeight + 1)];
         uvs = new Vector2[(mapWidth + 1) * (mapHeight + 1)];
         indices = new int[mapWidth * mapHeight * 2 * 3];
+        float[,] noiseMap = Noise.GenerateNoiseMap(mapWidth, mapHeight, seed, noiseScale, octaves, persistence, lacunarity, offset);
+
 
         int num = 0;
         int indexNum = 0;
@@ -90,7 +92,9 @@ public class MeshGenerator : MonoBehaviour
         {
             for (int x = 0; x <= mapWidth; x++)
             {
-                vertices[num] = new Vector3(x * widthScale / 100, 0, z * heightScale / 100);
+                vertices[num] = new Vector3(x * widthScale / 100,
+                    Mathf.Max(noiseMap[Mathf.Min(x, mapWidth - 1), Mathf.Min(z, mapHeight - 1)], .4f) * 5,
+                    z * heightScale / 100);
                 uvs[num] = new Vector2(x * widthScale / 100, z * heightScale / 100);
 
                 // We're forming a square here with vertices from the bottom left vertex
