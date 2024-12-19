@@ -18,6 +18,7 @@ public class MeshGenerator : MonoBehaviour
     public DrawMode drawMode;
     public int mapWidth;
     public int mapHeight;
+    public float heightMultiplier;
     public float noiseScale;
     [Range(1,6)]
     public int octaves;
@@ -27,8 +28,8 @@ public class MeshGenerator : MonoBehaviour
     public float lacunarity;
     public int seed;
     public Vector2 offset;
-
     public TerrainType[] regions;
+    public AnimationCurve heightCurve;
     
     // Object reference variables
     private Renderer textureRenderer;
@@ -54,6 +55,7 @@ public class MeshGenerator : MonoBehaviour
     {
         if (mapWidth < 1) mapWidth = 1;
         if (mapHeight < 1) mapHeight = 1;
+        if (heightMultiplier < 0) heightMultiplier = 0;
         if (noiseScale <= 0) noiseScale = 0.0011f;
         if (lacunarity < 1) lacunarity = 1;
     }
@@ -92,18 +94,16 @@ public class MeshGenerator : MonoBehaviour
         // Albeit messy looking, to combine them to only loop through the map once
         
         // Variables for texturing
-        int width = noiseMap.GetLength(0);
-        int height = noiseMap.GetLength(1);
-        Texture2D texture = new(width, height)
+        Texture2D texture = new(mapWidth, mapHeight)
         {
             filterMode = FilterMode.Point,
             wrapMode = TextureWrapMode.Clamp
         };
-        Color[] colorMap = new Color[width * height];
+        Color[] colorMap = new Color[mapWidth * mapHeight];
         
         // Variables for mesh deformation
-        float widthScale = 100.0f / mapWidth;
-        float heightScale = 100.0f / mapHeight;
+        float widthScale = 1f / mapWidth;
+        float heightScale = 1f / mapHeight;
         vertices = new Vector3[(mapWidth + 1) * (mapHeight + 1)];
         uvs = new Vector2[(mapWidth + 1) * (mapHeight + 1)];
         indices = new int[mapWidth * mapHeight * 2 * 3];
@@ -111,25 +111,26 @@ public class MeshGenerator : MonoBehaviour
         int indexNum = 0;
 
         // Trying to set the texture as perlin noise
-        for (int x = 0; x <= width; x++)
+        for (int x = 0; x <= mapWidth; x++)
         {
-            for (int z = 0; z <= height; z++)
+            for (int z = 0; z <= mapHeight; z++)
             {
                 if (drawMode is DrawMode.heightMap or DrawMode.coloredHeightMap)
                 {
-                    vertices[num] = new Vector3(x * widthScale / 100,
-                        Mathf.Max(noiseMap[Mathf.Min(x, mapWidth - 1), Mathf.Min(z, mapHeight - 1)], .4f) * 5,
-                        z * heightScale / 100);
+                    vertices[num] = new Vector3(x * widthScale,
+                        heightCurve.Evaluate(noiseMap[x, z]) * heightMultiplier, z * heightScale);
                 }
                 else
                 {
-                    vertices[num] = new Vector3(x * widthScale / 100, .4f, z * heightScale / 100);
+                    vertices[num] = new Vector3(x * widthScale, 0, z * heightScale);
                 }
 
-                uvs[num] = new Vector2(x * widthScale / 100, z * heightScale / 100);
+                uvs[num] = new Vector2(x * widthScale, z * heightScale);
                 num++;
                 
-                if (x == width || z == height) continue;
+                
+                // Indices and color do not need to be updated for outer vertices
+                if (x == mapWidth || z == mapHeight) continue;
                 
                 // We're forming a square here with vertices from the bottom left vertex
                 // Top left triangle
@@ -149,7 +150,7 @@ public class MeshGenerator : MonoBehaviour
                 {
                     case DrawMode.noiseMap:
                     case DrawMode.heightMap:
-                        colorMap[z * width + x] = Color.Lerp(Color.black, Color.white, noiseMap[x, z]);
+                        colorMap[z * mapWidth + x] = Color.Lerp(Color.black, Color.white, noiseMap[x, z]);
                         break;
                     case DrawMode.colorMap:
                     case DrawMode.coloredHeightMap:
@@ -159,7 +160,7 @@ public class MeshGenerator : MonoBehaviour
                         {
                             if (!(currentHeight <= regions[i].height)) continue;
                             
-                            colorMap[z * width + x] = regions[i].color;
+                            colorMap[z * mapWidth + x] = regions[i].color;
                             break;
                         }
                         break;
