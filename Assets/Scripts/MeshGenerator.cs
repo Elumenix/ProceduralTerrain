@@ -9,7 +9,9 @@ public class MeshGenerator : MonoBehaviour
     public enum DrawMode
     {
         noiseMap,
-        colorMap
+        colorMap,
+        heightMap,
+        coloredHeightMap
     };
     
     // Variables Changeable within the editor
@@ -36,6 +38,7 @@ public class MeshGenerator : MonoBehaviour
     private Vector3[] vertices;
     private int[] indices;
     private Vector2[] uvs;
+    private float[,] noiseMap; 
     
     void Start()
     {
@@ -68,78 +71,11 @@ public class MeshGenerator : MonoBehaviour
         }
         #endif
         
-        CreateShape();
+        noiseMap = Noise.GenerateNoiseMap(mapWidth, mapHeight, seed, noiseScale, octaves, persistence, lacunarity, offset);
+        CreateMesh();
         UpdateMesh();
-        SetTexture();
     }
 
-    void CreateShape()
-    {
-        //vertices = new Vector3[(mapWidth + 1) * (mapHeight + 1)];
-        float widthScale = 100.0f / mapWidth;
-        float heightScale = 100.0f / mapHeight;
-        vertices = new Vector3[(mapWidth + 1) * (mapHeight + 1)];
-        uvs = new Vector2[(mapWidth + 1) * (mapHeight + 1)];
-        indices = new int[mapWidth * mapHeight * 2 * 3];
-        float[,] noiseMap = Noise.GenerateNoiseMap(mapWidth, mapHeight, seed, noiseScale, octaves, persistence, lacunarity, offset);
-
-
-        int num = 0;
-        int indexNum = 0;
-        
-        // Row-major doesn't really matter here, so I'm traversing y first to make things easier
-        for (int z = 0; z <= mapHeight; z++)
-        {
-            for (int x = 0; x <= mapWidth; x++)
-            {
-                vertices[num] = new Vector3(x * widthScale / 100,
-                    Mathf.Max(noiseMap[Mathf.Min(x, mapWidth - 1), Mathf.Min(z, mapHeight - 1)], .4f) * 5,
-                    z * heightScale / 100);
-                uvs[num] = new Vector2(x * widthScale / 100, z * heightScale / 100);
-
-                // We're forming a square here with vertices from the bottom left vertex
-                if (x != mapWidth && z != mapHeight)
-                {
-                    // Top left triangle
-                    indices[indexNum] = x + ((mapWidth + 1) * z);
-                    indices[indexNum + 1] = x + ((mapWidth + 1) * (z + 1));
-                    indices[indexNum + 2] = x + ((mapWidth + 1) * (z + 1)) + 1;
-                    
-                    // Bottom right triangle
-                    indices[indexNum + 3] = indices[indexNum + 2];
-                    indices[indexNum + 4] = indices[indexNum] + 1;
-                    indices[indexNum + 5] = indices[indexNum];
-
-                    indexNum += 6;
-                }
-                
-                num++;
-            }
-        }
-        
-        
-        /*vertices = new Vector3[]
-        {
-            new Vector3(0,0,0),
-            new Vector3(0,0,1),
-            new Vector3(.5f,0,0),
-            new Vector3(.5f,0,1),
-            new Vector3(1, 0, 0),
-            new Vector3(1,0,1)
-        }*/
-
-        
-
-        /*uvs = new Vector2[]
-        {
-            new Vector2(0,0),
-            new Vector2(0,1),
-            new Vector2(.5f,0),
-            new Vector2(.5f,1),
-            new Vector2(1,0),
-            new Vector2(1, 1)
-        };*/
-    }
 
     void UpdateMesh()
     {
@@ -150,38 +86,83 @@ public class MeshGenerator : MonoBehaviour
         mesh.RecalculateNormals(); // Fixes Lighting
     }
 
-    void SetTexture()
+    void CreateMesh()
     {
-        float[,] noiseMap = Noise.GenerateNoiseMap(mapWidth, mapHeight, seed, noiseScale, octaves, persistence, lacunarity, offset);
+        // This was originally supposed to be two different methods, but it became much more efficient,
+        // Albeit messy looking, to combine them to only loop through the map once
+        
+        // Variables for texturing
         int width = noiseMap.GetLength(0);
         int height = noiseMap.GetLength(1);
-        
-        
-        Texture2D texture = new(width, height);
-        texture.filterMode = FilterMode.Point;
-        texture.wrapMode = TextureWrapMode.Clamp;
+        Texture2D texture = new(width, height)
+        {
+            filterMode = FilterMode.Point,
+            wrapMode = TextureWrapMode.Clamp
+        };
         Color[] colorMap = new Color[width * height];
+        
+        // Variables for mesh deformation
+        float widthScale = 100.0f / mapWidth;
+        float heightScale = 100.0f / mapHeight;
+        vertices = new Vector3[(mapWidth + 1) * (mapHeight + 1)];
+        uvs = new Vector2[(mapWidth + 1) * (mapHeight + 1)];
+        indices = new int[mapWidth * mapHeight * 2 * 3];
+        int num = 0;
+        int indexNum = 0;
 
         // Trying to set the texture as perlin noise
-        for (int x = 0; x < width; x++)
+        for (int x = 0; x <= width; x++)
         {
-            for (int y = 0; y < height; y++)
+            for (int z = 0; z <= height; z++)
             {
-                // How to draw the map
-                if (drawMode == DrawMode.noiseMap)
+                if (drawMode is DrawMode.heightMap or DrawMode.coloredHeightMap)
                 {
-                    colorMap[y * width + x] = Color.Lerp(Color.black, Color.white, noiseMap[x, y]);
+                    vertices[num] = new Vector3(x * widthScale / 100,
+                        Mathf.Max(noiseMap[Mathf.Min(x, mapWidth - 1), Mathf.Min(z, mapHeight - 1)], .4f) * 5,
+                        z * heightScale / 100);
                 }
-                else if (drawMode == DrawMode.colorMap)
+                else
                 {
-                    float currentHeight = noiseMap[x, y];
-                    for (int i = 0; i < regions.Length; i++)
+                    vertices[num] = new Vector3(x * widthScale / 100, .4f, z * heightScale / 100);
+                }
+
+                uvs[num] = new Vector2(x * widthScale / 100, z * heightScale / 100);
+                num++;
+                
+                if (x == width || z == height) continue;
+                
+                // We're forming a square here with vertices from the bottom left vertex
+                // Top left triangle
+                indices[indexNum] = x * (mapHeight + 1) + z;
+                indices[indexNum + 1] = indices[indexNum] + 1; 
+                indices[indexNum + 2] = (x+1) * (mapHeight + 1) + z + 1;
+                    
+                // Bottom right triangle
+                indices[indexNum + 3] = indices[indexNum + 2];
+                indices[indexNum + 4] = (x+1) * (mapHeight + 1) + z;
+                indices[indexNum + 5] = indices[indexNum];
+                indexNum += 6;
+
+
+                // Determines whether the texture will be greyscale or colored
+                switch (drawMode)
+                {
+                    case DrawMode.noiseMap:
+                    case DrawMode.heightMap:
+                        colorMap[z * width + x] = Color.Lerp(Color.black, Color.white, noiseMap[x, z]);
+                        break;
+                    case DrawMode.colorMap:
+                    case DrawMode.coloredHeightMap:
                     {
-                        if (currentHeight <= regions[i].height)
+                        float currentHeight = noiseMap[x, z];
+                        for (int i = 0; i < regions.Length; i++)
                         {
-                            colorMap[y * width + x] = regions[i].color;
+                            if (!(currentHeight <= regions[i].height)) continue;
+                            
+                            colorMap[z * width + x] = regions[i].color;
                             break;
                         }
+                        break;
                     }
                 }
             }
@@ -189,9 +170,6 @@ public class MeshGenerator : MonoBehaviour
         
         texture.SetPixels(colorMap);
         texture.Apply();
-
-
         textureRenderer.sharedMaterial.mainTexture = texture;
-        //textureRenderer.transform.localScale = new Vector3(width, 1, height);
     }
 }
