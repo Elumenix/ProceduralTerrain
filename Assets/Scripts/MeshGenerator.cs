@@ -75,26 +75,66 @@ public class MeshGenerator : MonoBehaviour
 
     void CreateShape()
     {
-        vertices = new Vector3[]
+        //vertices = new Vector3[(mapWidth + 1) * (mapHeight + 1)];
+        float widthScale = 100.0f / mapWidth;
+        float heightScale = 100.0f / mapHeight;
+        vertices = new Vector3[(mapWidth + 1) * (mapHeight + 1)];
+        uvs = new Vector2[(mapWidth + 1) * (mapHeight + 1)];
+        indices = new int[mapWidth * mapHeight * 2 * 3];
+
+        int num = 0;
+        int indexNum = 0;
+        
+        // Row-major doesn't really matter here, so I'm traversing y first to make things easier
+        for (int z = 0; z <= mapHeight; z++)
+        {
+            for (int x = 0; x <= mapWidth; x++)
+            {
+                vertices[num] = new Vector3(x * widthScale / 100, 0, z * heightScale / 100);
+                uvs[num] = new Vector2(x * widthScale / 100, z * heightScale / 100);
+
+                // We're forming a square here with vertices from the bottom left vertex
+                if (x != mapWidth && z != mapHeight)
+                {
+                    // Top left triangle
+                    indices[indexNum] = x + ((mapWidth + 1) * z);
+                    indices[indexNum + 1] = x + ((mapWidth + 1) * (z + 1));
+                    indices[indexNum + 2] = x + ((mapWidth + 1) * (z + 1)) + 1;
+                    
+                    // Bottom right triangle
+                    indices[indexNum + 3] = indices[indexNum + 2];
+                    indices[indexNum + 4] = indices[indexNum] + 1;
+                    indices[indexNum + 5] = indices[indexNum];
+
+                    indexNum += 6;
+                }
+                
+                num++;
+            }
+        }
+        
+        
+        /*vertices = new Vector3[]
         {
             new Vector3(0,0,0),
-            new Vector3(0,0,10),
-            new Vector3(10,0,0),
-            new Vector3(10,0,10)
-        };
+            new Vector3(0,0,1),
+            new Vector3(.5f,0,0),
+            new Vector3(.5f,0,1),
+            new Vector3(1, 0, 0),
+            new Vector3(1,0,1)
+        }*/
 
-        indices = new[]
-        {
-            0,1,2,2,1,3
-        };
         
-        uvs = new Vector2[]
+
+        /*uvs = new Vector2[]
         {
             new Vector2(0,0),
             new Vector2(0,1),
+            new Vector2(.5f,0),
+            new Vector2(.5f,1),
             new Vector2(1,0),
-            new Vector2(1,1)
-        };
+            new Vector2(1, 1)
+        };*/
     }
 
     void UpdateMesh()

@@ -157,7 +157,7 @@ MonoBehaviour:
   octaves: 5
   persistence: 0.5
   lacunarity: 2
-  seed: 92
+  seed: 94
   offset: {x: -29.4, y: 6.51}
   regions:
   - name: Very Deep Water
@@ -253,7 +253,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_LocalScale: {x: 10, y: 1, z: 10}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -275,8 +275,8 @@ Mesh:
     firstVertex: 0
     vertexCount: 4
     localAABB:
-      m_Center: {x: 5, y: 0, z: 5}
-      m_Extent: {x: 5, y: 0, z: 5}
+      m_Center: {x: 0.5, y: 0, z: 0.5}
+      m_Extent: {x: 0.5, y: 0, z: 0.5}
   m_Shapes:
     vertices: []
     shapes: []
@@ -355,7 +355,7 @@ Mesh:
       format: 0
       dimension: 0
     m_DataSize: 128
-    _typelessdata: 000000000000000000000000000000000000803f000000000000000000000000000000000000000000002041000000000000803f00000000000000000000803f000020410000000000000000000000000000803f000000000000803f00000000000020410000000000002041000000000000803f000000000000803f0000803f
+    _typelessdata: 000000000000000000000000000000000000803f00000000000000000000000000000000000000000000803f000000000000803f00000000000000000000803f0000803f0000000000000000000000000000803f000000000000803f000000000000803f000000000000803f000000000000803f000000000000803f0000803f
   m_CompressedMesh:
     m_Vertices:
       m_NumItems: 0
@@ -409,8 +409,8 @@ Mesh:
       m_BitSize: 0
     m_UVInfo: 0
   m_LocalAABB:
-    m_Center: {x: 5, y: 0, z: 5}
-    m_Extent: {x: 5, y: 0, z: 5}
+    m_Center: {x: 0.5, y: 0, z: 0.5}
+    m_Extent: {x: 0.5, y: 0, z: 0.5}
   m_MeshUsageFlags: 0
   m_CookingOptions: 30
   m_BakedConvexCollisionMesh: 
