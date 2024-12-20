@@ -29,7 +29,7 @@ public class MeshGenerator : MonoBehaviour
     public float lacunarity;
     public int seed;
     public Vector2 offset;
-    public TerrainType[] regions;
+    //public TerrainType[] regions;
     public AnimationCurve heightCurve;
     
     // Object reference variables
@@ -43,8 +43,8 @@ public class MeshGenerator : MonoBehaviour
     private float[,] noiseMap;
     
     // String search optimization
-    private static readonly int MinHeight = Shader.PropertyToID("minHeight");
-    private static readonly int MaxHeight = Shader.PropertyToID("maxHeight");
+    private static readonly int MinHeight = Shader.PropertyToID("_MinHeight");
+    private static readonly int MaxHeight = Shader.PropertyToID("_MaxHeight");
 
     void Start()
     {
@@ -145,7 +145,7 @@ public class MeshGenerator : MonoBehaviour
                     case DrawMode.heightMap:
                         colorMap[z * mapWidth + x] = Color.Lerp(Color.black, Color.white, noiseMap[x, z]);
                         break;
-                    case DrawMode.colorMap:
+                    /*case DrawMode.colorMap:
                     case DrawMode.coloredHeightMap:
                     {
                         float currentHeight = noiseMap[x, z];
@@ -157,7 +157,7 @@ public class MeshGenerator : MonoBehaviour
                             break;
                         }
                         break;
-                    }
+                    }*/
                 }
             }
         }
