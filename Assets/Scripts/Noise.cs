@@ -3,6 +3,8 @@ using UnityEngine;
 public static class Noise
 {
     public static System.Random rng;
+    public static float minHeight;
+    public static float maxHeight;
     public static float[,] GenerateNoiseMap(int mapWidth, int mapHeight, int seed, float scale, int octaves, float persistence, float lacunarity, Vector2 offset)
     {
         float[,] noiseMap = new float[mapWidth+1, mapHeight+1];
@@ -15,9 +17,10 @@ public static class Noise
         }
 
         Vector2 midPoint = new(mapWidth / 2.0f, mapHeight / 2.0f);
+        
         // For normalization
-        float maxHeight = float.MinValue;
-        float minHeight = float.MaxValue;
+        maxHeight = float.MinValue;
+        minHeight = float.MaxValue;
         
         
         for (int x = 0; x < mapWidth; x++)

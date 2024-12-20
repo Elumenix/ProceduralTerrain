@@ -2,6 +2,7 @@ using System;
 using Unity.VisualScripting;
 using UnityEngine;
 
+[ExecuteInEditMode]
 [RequireComponent(typeof(MeshFilter))]
 [RequireComponent(typeof(MeshRenderer))]
 public class MeshGenerator : MonoBehaviour
@@ -39,8 +40,12 @@ public class MeshGenerator : MonoBehaviour
     private Vector3[] vertices;
     private int[] indices;
     private Vector2[] uvs;
-    private float[,] noiseMap; 
+    private float[,] noiseMap;
     
+    // String search optimization
+    private static readonly int MinHeight = Shader.PropertyToID("minHeight");
+    private static readonly int MaxHeight = Shader.PropertyToID("maxHeight");
+
     void Start()
     {
         // Set reference for gameObject to use the mesh we create here
@@ -62,22 +67,10 @@ public class MeshGenerator : MonoBehaviour
 
     public void GenerateMap()
     {
-        
-        #if UNITY_EDITOR
-        // The only case where this should happen
-        if (!mesh)
-        {
-            mesh = new Mesh();
-            GetComponent<MeshFilter>().mesh = mesh;
-            textureRenderer = GetComponent<MeshRenderer>();
-        }
-        #endif
-        
         noiseMap = Noise.GenerateNoiseMap(mapWidth, mapHeight, seed, noiseScale, octaves, persistence, lacunarity, offset);
         CreateMesh();
         UpdateMesh();
     }
-
 
     void UpdateMesh()
     {
@@ -172,5 +165,7 @@ public class MeshGenerator : MonoBehaviour
         texture.SetPixels(colorMap);
         texture.Apply();
         textureRenderer.sharedMaterial.mainTexture = texture;
+        textureRenderer.sharedMaterial.SetFloat(MinHeight, 0);
+        textureRenderer.sharedMaterial.SetFloat(MaxHeight, heightMultiplier);
     }
 }
