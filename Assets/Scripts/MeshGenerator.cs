@@ -67,7 +67,7 @@ public class MeshGenerator : MonoBehaviour
 
     public void GenerateMap()
     {
-        noiseMap = Noise.GenerateNoiseMap(mapWidth, mapHeight, seed, noiseScale, octaves, persistence, lacunarity, offset);
+        noiseMap = Noise.GenerateNoiseMap(mapWidth + 1, mapHeight + 1, seed, noiseScale, octaves, persistence, lacunarity, offset);
         CreateMesh();
         UpdateMesh();
     }

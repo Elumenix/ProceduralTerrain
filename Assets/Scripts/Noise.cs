@@ -7,7 +7,7 @@ public static class Noise
     public static float maxHeight;
     public static float[,] GenerateNoiseMap(int mapWidth, int mapHeight, int seed, float scale, int octaves, float persistence, float lacunarity, Vector2 offset)
     {
-        float[,] noiseMap = new float[mapWidth+1, mapHeight+1];
+        float[,] noiseMap = new float[mapWidth, mapHeight];
         rng = new System.Random(seed);
         
         Vector2[] offsets = new Vector2[octaves];
