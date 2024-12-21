@@ -998,7 +998,7 @@
             "b": 0.0,
             "a": 0.0
         },
-        "ctime0": 0,
+        "ctime0": 131,
         "ctime1": 193,
         "ctime2": 4048,
         "ctime3": 10023,
@@ -1310,7 +1310,7 @@
     "m_Hidden": false,
     "m_ShaderOutputName": "Smoothness",
     "m_StageCapability": 2,
-    "m_Value": 0.5,
+    "m_Value": 0.0,
     "m_DefaultValue": 0.5,
     "m_Labels": []
 }
