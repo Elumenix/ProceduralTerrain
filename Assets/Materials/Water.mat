@@ -21,7 +21,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: Water
-  m_Shader: {fileID: -6465566751694194690, guid: 2bf84399fe3c5264987d19a0eeadb55a, type: 3}
+  m_Shader: {fileID: -6465566751694194690, guid: 48099813bcd71084fac82ed89d248759, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
@@ -100,7 +100,7 @@ Material:
     - _BUILTIN_QueueOffset: 0
     - _BumpScale: 1
     - _Cutoff: 0.5
-    - _Depth: 62.98
+    - _Depth: 0
     - _DetailNormalMapScale: 1
     - _Displacement: 0.015
     - _DstBlend: 0
@@ -110,7 +110,7 @@ Material:
     - _GlossyReflections: 1
     - _Metallic: 0
     - _Mode: 0
-    - _NormalStrength: 0.86
+    - _NormalStrength: 0.814
     - _OcclusionStrength: 1
     - _Parallax: 0.02
     - _QueueControl: 0
@@ -120,7 +120,7 @@ Material:
     - _SpecularHighlights: 1
     - _Speed: 3.69
     - _SrcBlend: 1
-    - _Strength: 0.03
+    - _Strength: 0.31
     - _UVSec: 0
     - _ZWrite: 1
     m_Colors:

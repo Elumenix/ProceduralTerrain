@@ -48,6 +48,7 @@ public class MeshGenerator : MonoBehaviour
 
     void Start()
     {
+        Camera.main!.depthTextureMode = DepthTextureMode.Depth;
         // Set reference for gameObject to use the mesh we create here
         mesh = new Mesh();
         GetComponent<MeshFilter>().mesh = mesh;
@@ -58,6 +59,7 @@ public class MeshGenerator : MonoBehaviour
 
     private void OnValidate()
     {
+        Camera.main!.depthTextureMode = DepthTextureMode.Depth;
         if (mapWidth < 1) mapWidth = 1;
         if (mapHeight < 1) mapHeight = 1;
         if (heightMultiplier < 0) heightMultiplier = 0;
