@@ -7,17 +7,20 @@ using UnityEngine.Experimental.Rendering;
 public class RayTracingMaster : MonoBehaviour
 {
     public ComputeShader RayTracingShader;
+    public Texture SkyboxTexture;
     private RenderTexture _target;
     
     // Cached strings
     private static readonly int Result = Shader.PropertyToID("Result");
     private static readonly int CameraToWorld = Shader.PropertyToID("_CameraToWorld");
     private static readonly int CameraInverseProjection = Shader.PropertyToID("_CameraInverseProjection");
+    private static readonly int SkyboxTexture1 = Shader.PropertyToID("_SkyboxTexture");
 
     private void SetShaderParameters()
     {
         RayTracingShader.SetMatrix(CameraToWorld, Camera.current.cameraToWorldMatrix);
         RayTracingShader.SetMatrix(CameraInverseProjection, Camera.current.projectionMatrix.inverse);
+        RayTracingShader.SetTexture(0, SkyboxTexture1, SkyboxTexture);
     }
     
     private void OnRenderImage(RenderTexture source, RenderTexture destination)
