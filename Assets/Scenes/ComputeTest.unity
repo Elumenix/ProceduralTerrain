@@ -209,13 +209,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1902923777}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.40821788, y: -0.23456968, z: 0.10938163, w: 0.8754261}
+  m_LocalRotation: {x: -0.14850532, y: 0.8098173, z: -0.5178997, w: -0.23221134}
   m_LocalPosition: {x: 0, y: 3, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 50, y: -30, z: 0}
+  m_LocalEulerAnglesHint: {x: 65.2, y: 212, z: 0}
 --- !u!1 &1904406915
 GameObject:
   m_ObjectHideFlags: 0
@@ -302,13 +302,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1904406915}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 1, z: -10}
+  m_LocalRotation: {x: 0.20603332, y: 0, z: 0, w: 0.978545}
+  m_LocalPosition: {x: 0, y: 2.8, z: -8.26}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 23.78, y: 0, z: 0}
 --- !u!114 &1904406920
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -323,6 +323,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   RayTracingShader: {fileID: 7200000, guid: dbf10ee42db1a5547b418ffb43eb6e10, type: 3}
   SkyboxTexture: {fileID: 2800000, guid: e9f7b7dacc22e3c4a996c437185eba41, type: 3}
+  DirectionalLight: {fileID: 1902923778}
+  NumReflections: 8
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

@@ -104,7 +104,7 @@ RayHit Trace(Ray ray)
     {
         for (int y = -5; y < 6; y++)
         {
-            IntersectSphere(ray, bestHit, float4(x, 2.0f, y, .3f));
+            IntersectSphere(ray, bestHit, float4(x, .3f, y, .3f));
         }
     }
     
@@ -115,17 +115,16 @@ float3 Shade(inout Ray ray, RayHit hit)
 {
     if (hit.distance < 1.#INF)
     {
-        float3 specular = float3(0.6f, 0.6f, 0.6f);
+        float3 specular = float3(0.04f, 0.04f, 0.04f);
         float3 albedo = float3(0.8f, 0.8f, 0.8f);
 
         // Reflect the ray and multiply energy with specular reflection
         ray.origin = hit.position + hit.normal * 0.001f;
         ray.direction = reflect(ray.direction, hit.normal);
-        ray.energy *- specular;
+        ray.energy *= specular;
 
         // Shadow test ray
-        bool shadow = false;
-        Ray shadowRay = CreateRay(hit.position + hit.normal * 0.001f, -1 * _DirectionalLight.xyz);
+        Ray shadowRay = CreateRay(hit.position + hit.normal * 0.001f, -_DirectionalLight.xyz);
         RayHit shadowHit = Trace(shadowRay);
         if (shadowHit.distance != 1.#INF)
         {
@@ -133,7 +132,7 @@ float3 Shade(inout Ray ray, RayHit hit)
         }
         
         // return diffuse-shaded color
-        return saturate(dot(hit.normal, _DirectionalLight.xyz) * -1) * _DirectionalLight.w * albedo;
+        return saturate(-dot(hit.normal, _DirectionalLight.xyz)) * _DirectionalLight.w * albedo;
     }
 
     // Make sky non-reflective

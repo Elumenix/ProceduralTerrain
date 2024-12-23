@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Random = UnityEngine.Random;
 
@@ -7,11 +10,14 @@ public class RayTracingMaster : MonoBehaviour
     public ComputeShader RayTracingShader;
     public Texture SkyboxTexture;
     public Light DirectionalLight;
+    [Range(1, 16)]
     public int NumReflections = 8;
     private RenderTexture _target;
     private uint _currentSample = 0;
     private Material _addMaterial;
-    private int prevNumReflections = 8;
+    private List<Transform> _transforms;
+    private Camera _camera;
+
     
     // Cached strings
     private static readonly int Result = Shader.PropertyToID("Result");
@@ -23,25 +29,50 @@ public class RayTracingMaster : MonoBehaviour
     private static readonly int Reflections = Shader.PropertyToID("numReflections");
     private static readonly int DirectionalLight1 = Shader.PropertyToID("_DirectionalLight");
 
+    private void Start()
+    {
+        _camera = Camera.main;
+        _transforms = new List<Transform>()
+        {
+            transform,
+            DirectionalLight.transform
+        };
+    }
 
     private void Update()
     {
-        if (!transform.hasChanged || DirectionalLight.transform.hasChanged || prevNumReflections != NumReflections) return;
+        foreach (Transform t in _transforms.Where(t => t.hasChanged))
+        {
+            _currentSample = 0;
+            t.hasChanged = false;
+        }
+    }
 
+    private void OnValidate()
+    {
+        // Make sure to redraw if a parameter changes in the inspector
         _currentSample = 0;
-        transform.hasChanged = false;
-        DirectionalLight.transform.hasChanged = false;
-        prevNumReflections = NumReflections;
+    }
+
+    private void OnRenderObject()
+    {
+        // Lets the shader display in editor mode, antialiasing will display weird but the program will work
+#if UNITY_EDITOR
+        if (Application.isPlaying) return;
+        _currentSample = 0;
+        SetShaderParameters();
+        Render(null);
+#endif
     }
     
     private void SetShaderParameters()
     {
-        RayTracingShader.SetMatrix(CameraToWorld, Camera.current.cameraToWorldMatrix);
-        RayTracingShader.SetMatrix(CameraInverseProjection, Camera.current.projectionMatrix.inverse);
+        RayTracingShader.SetMatrix(CameraToWorld, _camera.cameraToWorldMatrix);
+        RayTracingShader.SetMatrix(CameraInverseProjection, _camera.projectionMatrix.inverse);
         RayTracingShader.SetTexture(0, SkyboxTexture1, SkyboxTexture);
         RayTracingShader.SetVector(PixelOffset, new Vector2(Random.value, Random.value));
         Vector3 l = DirectionalLight.transform.forward;
-        RayTracingShader.SetVector(DirectionalLight1, new Vector4(l.x, l.z, DirectionalLight.intensity));
+        RayTracingShader.SetVector(DirectionalLight1, new Vector4(l.x, l.y, l.z, DirectionalLight.intensity));
         RayTracingShader.SetInt(Reflections, NumReflections);
     }
     
