@@ -1,5 +1,6 @@
 using System;
 using Unity.VisualScripting;
+using UnityEditor;
 using UnityEngine;
 
 [ExecuteInEditMode]
@@ -65,6 +66,15 @@ public class MeshGenerator : MonoBehaviour
         if (heightMultiplier < 0) heightMultiplier = 0;
         if (noiseScale <= 0) noiseScale = 0.0011f;
         if (lacunarity < 1) lacunarity = 1;
+        
+    }
+
+    private void Update()
+    {
+        // I couldn't find a better way to reload the shader after shader graph saves
+        #if UNITY_EDITOR
+        GenerateMap();
+        #endif
     }
 
     public void GenerateMap()
@@ -94,7 +104,7 @@ public class MeshGenerator : MonoBehaviour
             filterMode = FilterMode.Point,
             wrapMode = TextureWrapMode.Clamp
         };
-        Color[] colorMap = new Color[mapWidth * mapHeight];
+        //Color[] colorMap = new Color[mapWidth * mapHeight];
         
         // Variables for mesh deformation
         float widthScale = 1f / mapWidth;
@@ -141,11 +151,11 @@ public class MeshGenerator : MonoBehaviour
 
 
                 // Determines whether the texture will be greyscale or colored
-                switch (drawMode)
+                /*switch (drawMode)
                 {
                     case DrawMode.noiseMap:
                     case DrawMode.heightMap:
-                        colorMap[z * mapWidth + x] = Color.Lerp(Color.black, Color.white, noiseMap[x, z]);
+                        //colorMap[z * mapWidth + x] = Color.Lerp(Color.black, Color.white, noiseMap[x, z]);
                         break;
                     /*case DrawMode.colorMap:
                     case DrawMode.coloredHeightMap:
@@ -159,13 +169,13 @@ public class MeshGenerator : MonoBehaviour
                             break;
                         }
                         break;
-                    }*/
-                }
+                    }
+                }*/
             }
         }
         
-        texture.SetPixels(colorMap);
-        texture.Apply();
+        //texture.SetPixels(colorMap);
+        //texture.Apply();
         textureRenderer.sharedMaterial.mainTexture = texture;
         textureRenderer.sharedMaterial.SetFloat(MinHeight, 0);
         textureRenderer.sharedMaterial.SetFloat(MaxHeight, heightMultiplier);
