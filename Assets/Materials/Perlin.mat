@@ -24,6 +24,14 @@ Material:
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
+    - Layer_5FE25FC6:
+        m_Texture: {fileID: 2800000, guid: 1c60d4d051ad51443ae84e805ef47e01, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - Layer_7FF7773F:
+        m_Texture: {fileID: 2800000, guid: cd5727a45c480244face2d7af8289b82, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _BumpMap:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
@@ -60,6 +68,26 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _SampleTexture2D_21c0f2a33c644103bb103e4f1064ee3c_Texture_1_Texture2D:
+        m_Texture: {fileID: 2800000, guid: d9dcc4772b6d74a4aa4b0a1c89f7bd4d, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SampleTexture2D_93534f085b6e45778111399fdfb3d798_Texture_1_Texture2D:
+        m_Texture: {fileID: 2800000, guid: 0ccfb268b708458469fd8248bfcf9dbf, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SampleTexture2D_af66b79b6422407ca0ed682739d403c9_Texture_1_Texture2D:
+        m_Texture: {fileID: 2800000, guid: 8665402f475391b418adfa4a27137346, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SampleTexture2D_c6a2626cc6204e3aa57a7aa5a330970a_Texture_1_Texture2D:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SampleTexture2D_fdabd609a15f424fba9df1cdca1dd4db_Texture_1_Texture2D:
+        m_Texture: {fileID: 2800000, guid: 65270011ef2beaf47ad8344c64e0138e, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - unity_Lightmaps:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
@@ -76,18 +104,18 @@ Material:
     m_Floats:
     - _BUILTIN_QueueControl: 0
     - _BUILTIN_QueueOffset: 0
-    - _BlendAmount: 0.888
+    - _BlendAmount: 0.808
     - _BumpScale: 1
     - _Cutoff: 0.5
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
-    - _FadePower: 5.7
+    - _FadePower: 4.27
     - _GlossMapScale: 1
     - _Glossiness: 0.5
     - _GlossyReflections: 1
-    - _MaxGrassHeight: 0.691
-    - _MaxHeight: 6.75
-    - _MaxSandHeight: 0.258
+    - _MaxGrassHeight: 0.588
+    - _MaxHeight: 23.13
+    - _MaxSandHeight: 0.195
     - _Metallic: 0
     - _MinHeight: 0
     - _Mode: 0
@@ -100,7 +128,7 @@ Material:
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
     - _SrcBlend: 1
-    - _Threshold: 0.16
+    - _Threshold: 0.229
     - _UVSec: 0
     - _ZWrite: 1
     m_Colors:

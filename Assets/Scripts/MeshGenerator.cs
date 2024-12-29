@@ -66,20 +66,21 @@ public class MeshGenerator : MonoBehaviour
         if (heightMultiplier < 0) heightMultiplier = 0;
         if (noiseScale <= 0) noiseScale = 0.0011f;
         if (lacunarity < 1) lacunarity = 1;
-        
     }
 
     private void Update()
     {
         // I couldn't find a better way to reload the shader after shader graph saves
-        #if UNITY_EDITOR
-        GenerateMap();
-        #endif
+        if (!Application.isPlaying)
+        {
+            GenerateMap();
+        }
     }
 
     public void GenerateMap()
     {
-        noiseMap = Noise.GenerateNoiseMap(mapWidth + 1, mapHeight + 1, seed, noiseScale, octaves, persistence, lacunarity, offset);
+        noiseMap = Noise.GenerateNoiseMap(mapWidth + 1, mapHeight + 1, seed, noiseScale, octaves, persistence,
+            lacunarity, offset);
         CreateMesh();
         UpdateMesh();
     }
@@ -99,11 +100,11 @@ public class MeshGenerator : MonoBehaviour
         // Albeit messy looking, to combine them to only loop through the map once
         
         // Variables for texturing
-        Texture2D texture = new(mapWidth, mapHeight)
+        /*Texture2D texture = new(mapWidth, mapHeight)
         {
             filterMode = FilterMode.Point,
             wrapMode = TextureWrapMode.Clamp
-        };
+        };*/
         //Color[] colorMap = new Color[mapWidth * mapHeight];
         
         // Variables for mesh deformation
@@ -176,7 +177,7 @@ public class MeshGenerator : MonoBehaviour
         
         //texture.SetPixels(colorMap);
         //texture.Apply();
-        textureRenderer.sharedMaterial.mainTexture = texture;
+        //textureRenderer.sharedMaterial.mainTexture = texture;
         textureRenderer.sharedMaterial.SetFloat(MinHeight, 0);
         textureRenderer.sharedMaterial.SetFloat(MaxHeight, heightMultiplier);
     }
