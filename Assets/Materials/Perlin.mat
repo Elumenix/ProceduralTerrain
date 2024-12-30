@@ -68,8 +68,16 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _SampleTexture2D_047f735516d6430385da7dc8673d90f8_Texture_1_Texture2D:
+        m_Texture: {fileID: 2800000, guid: 96afea1400a46ed4f99da8e333677ee2, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _SampleTexture2D_21c0f2a33c644103bb103e4f1064ee3c_Texture_1_Texture2D:
         m_Texture: {fileID: 2800000, guid: d9dcc4772b6d74a4aa4b0a1c89f7bd4d, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SampleTexture2D_73d2bd11af2b40459960343894f3cbcb_Texture_1_Texture2D:
+        m_Texture: {fileID: 2800000, guid: a4b710047e00b31449a356f1bba3243a, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _SampleTexture2D_93534f085b6e45778111399fdfb3d798_Texture_1_Texture2D:
@@ -86,6 +94,10 @@ Material:
         m_Offset: {x: 0, y: 0}
     - _SampleTexture2D_c6a2626cc6204e3aa57a7aa5a330970a_Texture_1_Texture2D:
         m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SampleTexture2D_d5a8f16380044e1094bc1201edec02de_Texture_1_Texture2D:
+        m_Texture: {fileID: 2800000, guid: c5a0f0feb07700248b092460639e43e8, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _SampleTexture2D_fdabd609a15f424fba9df1cdca1dd4db_Texture_1_Texture2D:
@@ -119,7 +131,7 @@ Material:
     - _GlossyReflections: 1
     - _MaxGrassHeight: 0.588
     - _MaxHeight: 23.13
-    - _MaxSandHeight: 0.195
+    - _MaxSandHeight: 0.461
     - _Metallic: 0
     - _MinHeight: 0
     - _Mode: 0
@@ -132,7 +144,7 @@ Material:
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
     - _SrcBlend: 1
-    - _Threshold: 0.229
+    - _Threshold: 0.3
     - _UVSec: 0
     - _ZWrite: 1
     m_Colors:
