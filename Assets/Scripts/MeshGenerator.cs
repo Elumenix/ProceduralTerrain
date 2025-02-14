@@ -2,6 +2,7 @@ using System;
 using Unity.VisualScripting;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 [ExecuteInEditMode]
 [RequireComponent(typeof(MeshFilter))]
@@ -54,7 +55,6 @@ public class MeshGenerator : MonoBehaviour
         mesh = new Mesh();
         GetComponent<MeshFilter>().mesh = mesh;
         textureRenderer = GetComponent<MeshRenderer>();
-        
         GenerateMap();
     }
 
@@ -88,6 +88,7 @@ public class MeshGenerator : MonoBehaviour
     void UpdateMesh()
     {
         mesh.Clear();
+        mesh.indexFormat = IndexFormat.UInt32; // Allows larger meshes
         mesh.vertices = vertices;
         mesh.triangles = indices;
         mesh.uv = uvs;
