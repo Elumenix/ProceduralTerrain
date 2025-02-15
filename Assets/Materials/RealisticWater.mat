@@ -8,7 +8,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: RealisticWater
-  m_Shader: {fileID: 4800000, guid: efe7eae2bf3a3bc4aa07904eaf12f022, type: 3}
+  m_Shader: {fileID: -6465566751694194690, guid: 48099813bcd71084fac82ed89d248759, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
@@ -59,34 +59,63 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _PrimaryNormal:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SecondaryNormal:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _Amplitude: 0.05
+    - _Amplitude: 4.75
     - _BUILTIN_QueueControl: 0
     - _BUILTIN_QueueOffset: 0
     - _BumpScale: 1
     - _Cutoff: 0.5
+    - _Depth: 0.5
     - _DetailNormalMapScale: 1
+    - _Direction: 131
+    - _Displacement: 0.5
     - _DstBlend: 0
     - _GlossMapScale: 1
     - _Glossiness: 0.5
     - _GlossyReflections: 1
     - _Metallic: 0
     - _Mode: 0
+    - _NormalStrength: 0
     - _OcclusionStrength: 1
     - _Parallax: 0.02
     - _Precision: 0.05
+    - _Smoothness: 0.5
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
-    - _Speed: 7.2
+    - _Speed: 0.8
     - _SrcBlend: 1
+    - _Strength: 0
     - _UVSec: 0
-    - _WaveLength: 35.8
+    - _WaveLength: 6.07
     - _Wavelength: 3.11
     - _ZWrite: 1
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
+    - _DeepColor: {r: 0, g: 0.055487603, b: 1, a: 0}
     - _Direction: {r: 0.8, g: -1000, b: 0.45, a: -1000}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
+    - _ShallowColor: {r: 0, g: 0.9616323, b: 1, a: 0}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
+--- !u!114 &599883058575667346
+MonoBehaviour:
+  m_ObjectHideFlags: 11
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 639247ca83abc874e893eb93af2b5e44, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  version: 0
