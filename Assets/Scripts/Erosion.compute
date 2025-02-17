@@ -6,17 +6,20 @@
 //RWTexture2D<float4> Result;
 
 RWStructuredBuffer<float3> _VertexBuffer;
+RWStructuredBuffer<float> _AltitudeBuffer;
+StructuredBuffer<int> RainDropBuffer;
 uint numVertices;
+uint width;
 
-[numthreads(1,1,1)]
+// Constants
+float accelMultiplier;
+float numRainDrops;
+
+
+[numthreads(1024,1,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
-    // TODO: insert actual code here!
-
-    for (uint i = 0; i < numVertices; i++)
-    {
-        float3 vert = _VertexBuffer[i];
-        vert[1] += 2.25f;
-        _VertexBuffer[i] = vert;
-    }
+    float3 vert = _VertexBuffer[RainDropBuffer[id.x]];
+    vert[1] -= .03f;
+    _VertexBuffer[RainDropBuffer[id.x]] = vert;
 }

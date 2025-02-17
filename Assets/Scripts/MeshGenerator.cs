@@ -1,8 +1,6 @@
-using System;
-using Unity.VisualScripting;
-using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
+using Random = UnityEngine.Random;
 
 [ExecuteInEditMode]
 [RequireComponent(typeof(MeshFilter))]
@@ -40,6 +38,7 @@ public class MeshGenerator : MonoBehaviour
     
     // Mesh information
     private Vector3[] vertices;
+    private float[] altitudes;
     private int[] indices;
     private Vector2[] uvs;
     private float[,] noiseMap;
@@ -47,12 +46,20 @@ public class MeshGenerator : MonoBehaviour
     // Compute Shader Data
     public ComputeShader erosionShader;
     private ComputeBuffer terrainBuffer;
+    private ComputeBuffer altitudeBuffer;
+    private ComputeBuffer rainDropBuffer;
+    
+    // Erosion Variables
+    public int numRainDrops;
     
     // String search optimization
     private static readonly int MinHeight = Shader.PropertyToID("_MinHeight");
     private static readonly int MaxHeight = Shader.PropertyToID("_MaxHeight");
     private static readonly int VertexBuffer = Shader.PropertyToID("_VertexBuffer");
     private static readonly int NumVertices = Shader.PropertyToID("numVertices");
+    private static readonly int Width = Shader.PropertyToID("width");
+    private static readonly int AltitudeBuffer = Shader.PropertyToID("_AltitudeBuffer");
+    private static readonly int RainDropBuffer = Shader.PropertyToID("RainDropBuffer");
 
     void Start()
     {
@@ -97,20 +104,14 @@ public class MeshGenerator : MonoBehaviour
         // This was originally supposed to be two different methods, but it became much more efficient,
         // Albeit messy looking, to combine them to only loop through the map once
         
-        // Variables for texturing
-        /*Texture2D texture = new(mapWidth, mapHeight)
-        {
-            filterMode = FilterMode.Point,
-            wrapMode = TextureWrapMode.Clamp
-        };*/
-        //Color[] colorMap = new Color[mapWidth * mapHeight];
-        
         // Variables for mesh deformation
         float widthScale = 1f / mapWidth;
         float heightScale = 1f / mapHeight;
-        vertices = new Vector3[(mapWidth + 1) * (mapHeight + 1)];
-        uvs = new Vector2[(mapWidth + 1) * (mapHeight + 1)];
-        indices = new int[mapWidth * mapHeight * 2 * 3];
+        int size = (mapWidth + 1) * (mapHeight + 1);
+        vertices = new Vector3[size];
+        altitudes = new float[size];
+        uvs = new Vector2[size];
+        indices = new int[mapWidth * mapHeight * 2 * 3]; // What's needed to draw the mesh
         int num = 0;
         int indexNum = 0;
 
@@ -119,16 +120,10 @@ public class MeshGenerator : MonoBehaviour
         {
             for (int z = 0; z <= mapHeight; z++)
             {
-                if (drawMode is DrawMode.heightMap or DrawMode.coloredHeightMap)
-                {
-                    vertices[num] = new Vector3(x * widthScale,
-                        heightCurve.Evaluate(noiseMap[x, z]) * heightMultiplier, z * heightScale);
-                }
-                else
-                {
-                    vertices[num] = new Vector3(x * widthScale, 0, z * heightScale);
-                }
-
+                vertices[num] = new Vector3(x * widthScale,
+                    heightCurve.Evaluate(noiseMap[x, z]) * heightMultiplier, z * heightScale);
+                
+                altitudes[num] = vertices[num][1];
                 uvs[num] = new Vector2(x * widthScale, z * heightScale);
                 num++;
                 
@@ -147,58 +142,91 @@ public class MeshGenerator : MonoBehaviour
                 indices[indexNum + 4] = (x+1) * (mapHeight + 1) + z;
                 indices[indexNum + 5] = indices[indexNum];
                 indexNum += 6;
-
-
-                // Determines whether the texture will be greyscale or colored
-                /*switch (drawMode)
-                {
-                    case DrawMode.noiseMap:
-                    case DrawMode.heightMap:
-                        //colorMap[z * mapWidth + x] = Color.Lerp(Color.black, Color.white, noiseMap[x, z]);
-                        break;
-                    /*case DrawMode.colorMap:
-                    case DrawMode.coloredHeightMap:
-                    {
-                        float currentHeight = noiseMap[x, z];
-                        for (int i = 0; i < regions.Length; i++)
-                        {
-                            if (!(currentHeight <= regions[i].height)) continue;
-                            
-                            colorMap[z * mapWidth + x] = regions[i].color;
-                            break;
-                        }
-                        break;
-                    }
-                }*/
             }
         }
-        
-        //texture.SetPixels(colorMap);
-        //texture.Apply();
-        //textureRenderer.sharedMaterial.mainTexture = texture;
         textureRenderer.sharedMaterial.SetFloat(MinHeight, 0);
         textureRenderer.sharedMaterial.SetFloat(MaxHeight, heightMultiplier);
     }
 
+    // Eventually refactor the following to be used to change draw modes. Leverage altitude list for this
+    void DrawMesh()
+    {
+        // Variables for texturing
+        /*Texture2D texture = new(mapWidth, mapHeight)
+        {
+            filterMode = FilterMode.Point,
+            wrapMode = TextureWrapMode.Clamp
+        };*/
+        //Color[] colorMap = new Color[mapWidth * mapHeight];
+        
+        
+        
+        
+        // Determines whether the texture will be greyscale or colored
+        /*switch (drawMode)
+        {
+            case DrawMode.noiseMap:
+            case DrawMode.heightMap:
+                //colorMap[z * mapWidth + x] = Color.Lerp(Color.black, Color.white, noiseMap[x, z]);
+                break;
+            /*case DrawMode.colorMap:
+            case DrawMode.coloredHeightMap:
+            {
+                float currentHeight = noiseMap[x, z];
+                for (int i = 0; i < regions.Length; i++)
+                {
+                    if (!(currentHeight <= regions[i].height)) continue;
+
+                    colorMap[z * mapWidth + x] = regions[i].color;
+                    break;
+                }
+                break;
+            }
+        }*/
+        
+        
+        //texture.SetPixels(colorMap);
+        //texture.Apply();
+        //textureRenderer.sharedMaterial.mainTexture = texture;
+    }
+
     public void ComputeErosion()
     {
-        // Create compute buffer for vertices
-        terrainBuffer = new ComputeBuffer(vertices.Length, 12);
+        // PreDetermine raindrop positions
+        int[] rd = new int[numRainDrops];
+        int size = vertices.Length;
+        for (int i = 0; i < numRainDrops; i++)
+        {
+            rd[i] = Random.Range(0, size);
+        }
+        
+        // Manage Compute Buffers
+        terrainBuffer = new ComputeBuffer(size, 12);
         terrainBuffer.SetData(vertices);
+        altitudeBuffer = new ComputeBuffer(size, 4);
+        altitudeBuffer.SetData(altitudes);
+        rainDropBuffer = new ComputeBuffer(numRainDrops, 4);
+        rainDropBuffer.SetData(rd);
         
         // Set necessary Data
         erosionShader.SetBuffer(0, VertexBuffer, terrainBuffer);
-        erosionShader.SetInt(NumVertices, vertices.Length);
+        erosionShader.SetBuffer(0, AltitudeBuffer, altitudeBuffer);
+        erosionShader.SetBuffer(0, RainDropBuffer, rainDropBuffer);
+        erosionShader.SetInt(NumVertices, size);
+        erosionShader.SetInt(Width, mapWidth);
         
         // Execute erosion shader
-        erosionShader.Dispatch(0, 1, 1, 1);
+        erosionShader.Dispatch(0, Mathf.CeilToInt(numRainDrops / 1024f), 1, 1);
         
         // Copy new vertex data and apply
         terrainBuffer.GetData(vertices);
+        altitudeBuffer.GetData(altitudes);
         mesh.vertices = vertices;
         mesh.RecalculateNormals();
         
         // Clean up
         terrainBuffer.Release();
+        altitudeBuffer.Release();
+        rainDropBuffer.Release();
     }
 }
