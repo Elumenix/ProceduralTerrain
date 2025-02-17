@@ -1,4 +1,6 @@
+using System;
 using UnityEditor;
+using UnityEngine;
 
 namespace Editor
 {
@@ -11,6 +13,16 @@ namespace Editor
 
             // Automatically redraws if something in the inspector is changed
             if (DrawDefaultInspector())
+            {
+                meshGen.GenerateMap();
+            }
+
+            if (GUILayout.Button("Erode"))
+            {
+                meshGen.ComputeErosion();
+            }
+            
+            if (GUILayout.Button("Reset"))
             {
                 meshGen.GenerateMap();
             }

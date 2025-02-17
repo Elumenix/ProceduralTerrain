@@ -43,10 +43,16 @@ public class MeshGenerator : MonoBehaviour
     private int[] indices;
     private Vector2[] uvs;
     private float[,] noiseMap;
+
+    // Compute Shader Data
+    public ComputeShader erosionShader;
+    private ComputeBuffer terrainBuffer;
     
     // String search optimization
     private static readonly int MinHeight = Shader.PropertyToID("_MinHeight");
     private static readonly int MaxHeight = Shader.PropertyToID("_MaxHeight");
+    private static readonly int VertexBuffer = Shader.PropertyToID("_VertexBuffer");
+    private static readonly int NumVertices = Shader.PropertyToID("numVertices");
 
     void Start()
     {
@@ -66,15 +72,6 @@ public class MeshGenerator : MonoBehaviour
         if (heightMultiplier < 0) heightMultiplier = 0;
         if (noiseScale <= 0) noiseScale = 0.0011f;
         if (lacunarity < 1) lacunarity = 1;
-    }
-
-    private void Update()
-    {
-        // I couldn't find a better way to reload the shader after shader graph saves
-        if (!Application.isPlaying)
-        {
-            GenerateMap();
-        }
     }
 
     public void GenerateMap()
@@ -181,5 +178,27 @@ public class MeshGenerator : MonoBehaviour
         //textureRenderer.sharedMaterial.mainTexture = texture;
         textureRenderer.sharedMaterial.SetFloat(MinHeight, 0);
         textureRenderer.sharedMaterial.SetFloat(MaxHeight, heightMultiplier);
+    }
+
+    public void ComputeErosion()
+    {
+        // Create compute buffer for vertices
+        terrainBuffer = new ComputeBuffer(vertices.Length, 12);
+        terrainBuffer.SetData(vertices);
+        
+        // Set necessary Data
+        erosionShader.SetBuffer(0, VertexBuffer, terrainBuffer);
+        erosionShader.SetInt(NumVertices, vertices.Length);
+        
+        // Execute erosion shader
+        erosionShader.Dispatch(0, 1, 1, 1);
+        
+        // Copy new vertex data and apply
+        terrainBuffer.GetData(vertices);
+        mesh.vertices = vertices;
+        mesh.RecalculateNormals();
+        
+        // Clean up
+        terrainBuffer.Release();
     }
 }
