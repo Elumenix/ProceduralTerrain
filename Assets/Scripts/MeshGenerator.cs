@@ -1,3 +1,4 @@
+using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Rendering;
 using Random = UnityEngine.Random;
@@ -214,6 +215,9 @@ public class MeshGenerator : MonoBehaviour
         erosionShader.SetBuffer(0, RainDropBuffer, rainDropBuffer);
         erosionShader.SetInt(NumVertices, size);
         erosionShader.SetInt(Width, mapWidth);
+        erosionShader.SetVector("deltaParams",
+            new Vector4(mapWidth / transform.localScale.x, mapHeight / transform.localScale.y, transform.localScale.x,
+                transform.localScale.y));
         
         // Execute erosion shader
         erosionShader.Dispatch(0, Mathf.CeilToInt(numRainDrops / 1024f), 1, 1);

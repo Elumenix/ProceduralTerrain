@@ -72,14 +72,17 @@ public class RayTracingMaster : MonoBehaviour
         // Add a number of random spheres
         for (int i = 0; i < SpheresMax; i++)
         {
-            Sphere sphere = new Sphere();
-
-            // Radius and position
-            sphere.radius = SphereRadius.x + Random.value * (SphereRadius.y - SphereRadius.x);
+            float radius = SphereRadius.x + Random.value * (SphereRadius.y - SphereRadius.x);
             Vector2 randomPos = Random.insideUnitCircle * SpherePlacementRadius;
-            sphere.position = new Vector3(randomPos.x, sphere.radius, randomPos.y);
+            
+            Sphere sphere = new Sphere
+            {
+                // Radius and position
+                radius = radius,
+                position = new Vector3(randomPos.x, radius, randomPos.y)
+            };
 
-            // Reject spheres that are intersecting others
+            // Reject spheres that are intersecting other spheres
             foreach (Sphere other in spheres)
             {
                 float minDist = sphere.radius + other.radius;

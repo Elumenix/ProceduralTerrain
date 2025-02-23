@@ -8,18 +8,122 @@
 RWStructuredBuffer<float3> _VertexBuffer;
 RWStructuredBuffer<float> _AltitudeBuffer;
 StructuredBuffer<int> RainDropBuffer;
+
+// Vertex/grid information
 uint numVertices;
-uint width;
+int width;
+
+// first two params are world space dimension deltas, second two are max bounds of both dimensions
+// Assumption is that the bottom left corner of the map is at 0,0 (meaning the other two bounds are implied)
+float4 deltaParams;
 
 // Constants
-float accelMultiplier;
 float numRainDrops;
+float accelMultiplier = .3f;
+float frictionMultiplier = .85f;
+float maxSediment = 4;
+
+
+float3 GetVertexNormal(uint v)
+{
+    float3 normalSum = float3(0.0f, 0.0f, 0.0f);
+    float3 AB, AC, faceNormal;
+    
+    // Top right triangle
+    if ((v + 1) % width != 0 && (int)v - width >= 0)
+    {
+        AB = _VertexBuffer[v + 1] - _VertexBuffer[v];
+        AC = _VertexBuffer[v - width + 1] - _VertexBuffer[v];
+        faceNormal = normalize(cross(AB, AC));
+        normalSum += faceNormal;
+    }
+
+    // Top left triangle
+    if (v % width != 0 && (int)v - width >= 0)
+    {
+        AB = _VertexBuffer[v - 1] - _VertexBuffer[v];
+        AC = _VertexBuffer[v - width - 1] - _VertexBuffer[v];
+        faceNormal = normalize(cross(AB, AC));
+        normalSum += faceNormal;
+    }
+
+    // Bottom left triangle
+    if (v % width != 0 && v + width < numVertices)
+    {
+        AB = _VertexBuffer[v - 1] - _VertexBuffer[v];
+        AC = _VertexBuffer[v + width - 1] - _VertexBuffer[v];
+        faceNormal = normalize(cross(AB, AC));
+        normalSum += faceNormal;
+    }
+
+    // Bottom right triangle
+    if ((v + 1) % width != 0 && v + width < numVertices)
+    {
+        AB = _VertexBuffer[v + 1] - _VertexBuffer[v];
+        AC = _VertexBuffer[v + width + 1] - _VertexBuffer[v];
+        faceNormal = normalize(cross(AB, AC));
+        normalSum += faceNormal;
+    }
+
+    // hlsl internally safeguards against division by 0
+    return normalize(normalSum);
+}
+
+uint GetClosestVertex(float2 pos)
+{
+    // Rounding takes us from face position to nearest vertex
+    int x = round(pos.x * deltaParams.x);
+    int y = round(pos.y * deltaParams.y);
+
+    // We're off the map
+    if (x < 0 || x > deltaParams.z || y < 0 || y > deltaParams.w)
+    {
+        return 4294967295;
+    }
+
+    // Correct vertex
+    return y * width + x;
+}
+
+
+void SimulateDrop(int v, float3 velocity, float volume, float sediment) 
+{
+    // I may be able to bring some of these default variables in here
+    
+    float2 position = float2(v % width * deltaParams.x, v / width * deltaParams.y);
+    
+    while (volume > 0)
+    {
+        // Get vertex
+        uint i = GetClosestVertex(position);
+        if (i == 4294967295) break;
+
+        // Calculate normal
+        float3 vertexNormal = GetVertexNormal(i);
+
+        // Test erosion
+        float3 vert = _VertexBuffer[RainDropBuffer[i]];
+        vert[1] -= .03f;
+        _VertexBuffer[RainDropBuffer[i]] = vert;
+        volume -= .01f;
+
+        // Acceleration
+        velocity += float3(vertexNormal.x,0,vertexNormal.z) * accelMultiplier;
+        // Friction
+        velocity *= (1 - frictionMultiplier);
+
+        // Update Position
+        position += velocity;
+    }
+}
 
 
 [numthreads(1024,1,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
-    float3 vert = _VertexBuffer[RainDropBuffer[id.x]];
+    SimulateDrop(RainDropBuffer[id.x], float3(0,0,0), 1.0f, 0.0f);
+    
+    /*float3 vert = _VertexBuffer[RainDropBuffer[id.x]];
     vert[1] -= .03f;
-    _VertexBuffer[RainDropBuffer[id.x]] = vert;
+    _VertexBuffer[RainDropBuffer[id.x]] = vert;*/
 }
