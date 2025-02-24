@@ -19,7 +19,7 @@ float4 deltaParams;
 
 // Constants
 float numRainDrops;
-float accelMultiplier = .3f;
+float accelMultiplier = 5.0f;
 float frictionMultiplier = .85f;
 float maxSediment = 4;
 
@@ -72,8 +72,8 @@ float3 GetVertexNormal(uint v)
 uint GetClosestVertex(float2 pos)
 {
     // Rounding takes us from face position to nearest vertex
-    int x = round(pos.x * deltaParams.x);
-    int y = round(pos.y * deltaParams.y);
+    int x = round(pos.x / deltaParams.x);
+    int y = round(pos.y / deltaParams.y);
 
     // We're off the map
     if (x < 0 || x > deltaParams.z || y < 0 || y > deltaParams.w)
@@ -86,29 +86,30 @@ uint GetClosestVertex(float2 pos)
 }
 
 
-void SimulateDrop(int v, float3 velocity, float volume, float sediment) 
+void SimulateDrop(uint v) 
 {
-    // I may be able to bring some of these default variables in here
-    
     float2 position = float2(v % width * deltaParams.x, v / width * deltaParams.y);
+    //float sediment = 0;
+    float volume = 1;
+    float2 velocity = float2(0.0, 0.0);
     
     while (volume > 0)
     {
         // Get vertex
         uint i = GetClosestVertex(position);
-        if (i == 4294967295) break;
+        if (i == (uint)4294967295) break;
 
         // Calculate normal
         float3 vertexNormal = GetVertexNormal(i);
 
         // Test erosion
-        float3 vert = _VertexBuffer[RainDropBuffer[i]];
+        float3 vert = _VertexBuffer[i];
         vert[1] -= .03f;
-        _VertexBuffer[RainDropBuffer[i]] = vert;
+        _VertexBuffer[i] = vert;
         volume -= .01f;
 
         // Acceleration
-        velocity += float3(vertexNormal.x,0,vertexNormal.z) * accelMultiplier;
+        velocity += float2(vertexNormal.x,vertexNormal.z) * accelMultiplier;
         // Friction
         velocity *= (1 - frictionMultiplier);
 
@@ -121,9 +122,5 @@ void SimulateDrop(int v, float3 velocity, float volume, float sediment)
 [numthreads(1024,1,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
-    SimulateDrop(RainDropBuffer[id.x], float3(0,0,0), 1.0f, 0.0f);
-    
-    /*float3 vert = _VertexBuffer[RainDropBuffer[id.x]];
-    vert[1] -= .03f;
-    _VertexBuffer[RainDropBuffer[id.x]] = vert;*/
+    SimulateDrop(RainDropBuffer[id.x]);
 }

@@ -1,4 +1,7 @@
+using System;
+using System.Collections.Generic;
 using Unity.Mathematics;
+using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.Rendering;
 using Random = UnityEngine.Random;
@@ -52,6 +55,14 @@ public class MeshGenerator : MonoBehaviour
     
     // Erosion Variables
     public int numRainDrops;
+
+    private List<Vector3> points;
+    private List<Vector3> points2;
+
+    [Range(0, 10)]
+    public float accelMultiplier = 1.0f;
+    [Range(0,1)]
+    public float frictionMultiplier = .9f;
     
     // String search optimization
     private static readonly int MinHeight = Shader.PropertyToID("_MinHeight");
@@ -193,14 +204,18 @@ public class MeshGenerator : MonoBehaviour
 
     public void ComputeErosion()
     {
+        points = new List<Vector3>();
+        points2 = new List<Vector3>();
+        
         // PreDetermine raindrop positions
-        int[] rd = new int[numRainDrops];
+        uint[] rd = new uint[numRainDrops];
         int size = vertices.Length;
         for (int i = 0; i < numRainDrops; i++)
         {
-            rd[i] = Random.Range(0, size);
+            rd[i] = (uint)Random.Range(0, size);
         }
         
+        /*
         // Manage Compute Buffers
         terrainBuffer = new ComputeBuffer(size, 12);
         terrainBuffer.SetData(vertices);
@@ -216,8 +231,8 @@ public class MeshGenerator : MonoBehaviour
         erosionShader.SetInt(NumVertices, size);
         erosionShader.SetInt(Width, mapWidth);
         erosionShader.SetVector("deltaParams",
-            new Vector4(mapWidth / transform.localScale.x, mapHeight / transform.localScale.y, transform.localScale.x,
-                transform.localScale.y));
+            new Vector4(transform.localScale.x / mapWidth, transform.localScale.z / mapHeight, transform.localScale.x,
+            transform.localScale.z));
         
         // Execute erosion shader
         erosionShader.Dispatch(0, Mathf.CeilToInt(numRainDrops / 1024f), 1, 1);
@@ -230,7 +245,175 @@ public class MeshGenerator : MonoBehaviour
         
         // Clean up
         terrainBuffer.Release();
+        terrainBuffer.Release();
         altitudeBuffer.Release();
-        rainDropBuffer.Release();
+        rainDropBuffer.Release();*/
+
+        /*foreach (uint i in rd)
+        {
+            SimulateDrop(i);
+        }*/
+        
+        SimulateDrop(39604);
+        
+        mesh.vertices = vertices;
+        mesh.RecalculateNormals();
+    }
+    
+    
+    float3 GetVertexNormal(uint v)
+    {
+        // CPU variables
+        int width = mapWidth + 1;
+        uint numVertices = (uint)vertices.Length;
+        
+        float3 normalSum = new float3(0.0f, 0.0f, 0.0f);
+        float3 AB, AC, faceNormal;
+        
+        // Top right triangle
+        if ((v + 1) % width != 0 && (int)v - width >= 0)
+        {
+            AB = vertices[v + 1] - vertices[v];
+            AC = vertices[v - width + 1] - vertices[v];
+            faceNormal = Vector3.Normalize(Vector3.Cross(AB, AC));
+            normalSum += faceNormal;
+        }
+
+        // Top left triangle
+        if (v % width != 0 && (int)v - width - 1 >= 0)
+        {
+            AB = vertices[v - 1] - vertices[v];
+            AC = vertices[v - width - 1] - vertices[v];
+            faceNormal = Vector3.Normalize(Vector3.Cross(AB, AC));
+            normalSum += faceNormal;
+        }
+
+        // Bottom left triangle
+        if (v % width != 0 && v + width < numVertices)
+        {
+            AB = vertices[v - 1] - vertices[v];
+            AC = vertices[v + width - 1] - vertices[v];
+            faceNormal = Vector3.Normalize(Vector3.Cross(AB, AC));
+
+            normalSum += faceNormal;
+        }
+
+        // Bottom right triangle
+        if ((v + 1) % width != 0 && v + width + 1 < numVertices)
+        {
+            AB = vertices[v + 1] - vertices[v];
+            AC = vertices[v + width + 1] - vertices[v];
+            faceNormal = Vector3.Normalize(Vector3.Cross(AB, AC));
+
+            normalSum += faceNormal;
+        }
+
+        // hlsl internally safeguards against division by 0
+        return Vector3.Normalize(normalSum);
+    }
+
+    uint GetClosestVertex(float2 pos)
+    {
+        // temp cpu variable
+        var deltaParams = new Vector4(transform.localScale.x / mapWidth, transform.localScale.z / mapHeight, transform.localScale.x,
+            transform.localScale.z);
+        int width = mapWidth + 1;
+        
+        
+        // Rounding takes us from face position to nearest vertex row/column
+        int x = Mathf.RoundToInt(pos.x / deltaParams.x);
+        int y = Mathf.RoundToInt(pos.y / deltaParams.y);
+
+        // We're off the map
+        if (x < 0 || x > mapWidth || y < 0 || y > mapHeight)
+        {
+            return 4294967295;
+        }
+
+        // Correct vertex
+        return (uint)(x * width + y);
+    }
+
+
+    void SimulateDrop(uint v) 
+    {
+        // temp cpu variable
+        var deltaParams = new Vector4(transform.localScale.x / mapWidth, transform.localScale.z / mapHeight, transform.localScale.x,
+            transform.localScale.z);
+        int width = mapWidth+1;
+        
+        // ReSharper disable once PossibleLossOfFraction
+        float2 position = new float2(v / width * deltaParams.x, v % width * deltaParams.y);
+        //float sediment = 0;
+        float volume = 1;
+        float2 velocity = new float2(0.0f, 0.0f);
+
+        bool first = true;
+        
+        while (volume > 0)
+        {
+            // Get vertex
+            uint i = GetClosestVertex(position);
+
+            if (first)
+            {
+                first = false;
+
+                if (i != v)
+                {
+                    Debug.Log("Bad " + v);
+                }
+            }
+            
+            if (i == 4294967295)
+            {
+                /*points.Add(new Vector3(position.x, 0, position.y));
+                points2.Add(new Vector3(position.x, 0, position.y));*/
+
+                break;
+            }
+            
+            //points.Add(new Vector3(vertices[i].x * 100, vertices[i].y, vertices[i].z * 100));
+            //points2.Add(new Vector3(position.x, 0, position.y));
+            
+
+            // Calculate normal
+            float3 vertexNormal = GetVertexNormal(i);
+
+            // Test erosion
+            /*float3 vert = vertices[i];
+            vert[1] -= .03f;
+            vertices[i] = vert;*/
+            volume -= .1f;
+
+            // Acceleration
+            velocity += new float2(vertexNormal.x,vertexNormal.z) * accelMultiplier;
+            // Friction
+            velocity *= (1 - frictionMultiplier);
+
+            // Update Position
+            position += velocity;
+        }
+    }
+
+    private void OnDrawGizmos()
+    {
+        Gizmos.color = Color.white;
+        if (points != null)
+        {
+            for (int i = 1; i < points.Count; i++)
+            {
+                Gizmos.DrawLine(points[i - 1], points[i]);
+            }
+        }
+        
+        Gizmos.color = Color.red;
+        if (points2 != null)
+        {
+            for (int i = 1; i < points2.Count; i++)
+            {
+                Gizmos.DrawLine(points2[i - 1], points2[i]);
+            }
+        }
     }
 }
