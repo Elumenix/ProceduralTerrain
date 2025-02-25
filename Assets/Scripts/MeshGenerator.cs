@@ -61,6 +61,12 @@ public class MeshGenerator : MonoBehaviour
     public float accelMultiplier = 1.0f;
     [Range(0,1)]
     public float frictionMultiplier = .9f;
+    [Range(0,1)]
+    public float sedimentMax = .1f;
+    [Range(0,1)]
+    public float depositionRate = .25f;
+    [Range(0,1)]
+    public float softness = .1f;
     
     // String search optimization
     private static readonly int MinHeight = Shader.PropertyToID("_MinHeight");
@@ -341,7 +347,7 @@ public class MeshGenerator : MonoBehaviour
     {
         // ReSharper disable once PossibleLossOfFraction
         float2 position = new float2(vertices[v].x, vertices[v].z);
-        //float sediment = 0;
+        float sediment = 0;
         float volume = 1;
         float2 velocity = new float2(0.0f, 0.0f);
         
@@ -355,16 +361,42 @@ public class MeshGenerator : MonoBehaviour
             if (i == UInt32.MaxValue) break;
             
             // for debugging
-            points.Add(new Vector3(position.x * 100, vertices[i].y, position.y * 100));
+            //points.Add(new Vector3(position.x * 100, vertices[i].y, position.y * 100));
 
             // Calculate normal
             float3 vertexNormal = GetVertexNormal(i);
-
-            // Test erosion
-            /*float3 vert = vertices[i];
-            vert[1] -= .03f;
-            vertices[i] = vert;*/
-            volume -= .1f;
+            
+            // Max Sediment a particle can hold
+            float max = sedimentMax * Vector3.Magnitude(new Vector3(velocity.x, 0, velocity.y)) * volume;
+            //Debug.Log("Max: " + max);
+            float3 vert = vertices[i];
+            
+            if (sediment > max)
+            {
+                // Deposit sediment to terrain
+                float depositAmount = depositionRate * (sediment - max);
+                sediment -= depositAmount;
+                
+                //Debug.Log("Depositing " + depositAmount);
+                
+                vert[1] += depositAmount;
+            }
+            else
+            {
+                // Take sediment from the terrain
+                float erosionAmount = softness * (max - sediment);
+                sediment += erosionAmount;
+                
+                //Debug.Log("Taking " + erosionAmount);
+                
+                vert[1] -= erosionAmount;
+            }
+            vertices[i] = vert;
+            
+            //Debug.Log("New Sediment Amount: " + sediment);
+            
+            // Evaporation
+            volume -= .01f;
 
             // Acceleration
             velocity += new float2(vertexNormal.x,vertexNormal.z) * accelMultiplier;
@@ -378,13 +410,13 @@ public class MeshGenerator : MonoBehaviour
 
     private void OnDrawGizmos()
     {
-        Gizmos.color = Color.red;
+        /*Gizmos.color = Color.red;
         if (points != null)
         {
             for (int i = 1; i < points.Count; i++)
             {
                 Gizmos.DrawLine(points[i - 1], points[i]);
             }
-        }
+        }*/
     }
 }
