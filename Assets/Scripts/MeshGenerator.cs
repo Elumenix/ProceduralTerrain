@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using Unity.Mathematics;
-using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.Rendering;
 using Random = UnityEngine.Random;
@@ -57,7 +56,6 @@ public class MeshGenerator : MonoBehaviour
     public int numRainDrops;
 
     private List<Vector3> points;
-    private List<Vector3> points2;
 
     [Range(0, 10)]
     public float accelMultiplier = 1.0f;
@@ -205,7 +203,6 @@ public class MeshGenerator : MonoBehaviour
     public void ComputeErosion()
     {
         points = new List<Vector3>();
-        points2 = new List<Vector3>();
         
         // PreDetermine raindrop positions
         uint[] rd = new uint[numRainDrops];
@@ -249,12 +246,10 @@ public class MeshGenerator : MonoBehaviour
         altitudeBuffer.Release();
         rainDropBuffer.Release();*/
 
-        /*foreach (uint i in rd)
+        foreach (uint i in rd)
         {
             SimulateDrop(i);
-        }*/
-        
-        SimulateDrop(39604);
+        }
         
         mesh.vertices = vertices;
         mesh.RecalculateNormals();
@@ -265,117 +260,102 @@ public class MeshGenerator : MonoBehaviour
     {
         // CPU variables
         int width = mapWidth + 1;
-        uint numVertices = (uint)vertices.Length;
+        uint x = (uint)(v % (width));
+        uint y = (uint)((v - x) / (width));
         
         float3 normalSum = new float3(0.0f, 0.0f, 0.0f);
         float3 AB, AC, faceNormal;
         
-        // Top right triangle
-        if ((v + 1) % width != 0 && (int)v - width >= 0)
+        
+        // Top Left triangle
+        if (x > 0 && y > 0)
         {
-            AB = vertices[v + 1] - vertices[v];
+            AB = vertices[v - 1] - vertices[v];
+            AC = vertices[v - width] - vertices[v];
+            faceNormal = Vector3.Normalize(Vector3.Cross(AB, AC));
+            normalSum += faceNormal;
+        }
+        
+        // Top Middle and Top Right triangles
+        if (x < mapWidth && y > 0)
+        {
+            // Top Middle
+            AB = vertices[v - width] - vertices[v];
             AC = vertices[v - width + 1] - vertices[v];
             faceNormal = Vector3.Normalize(Vector3.Cross(AB, AC));
             normalSum += faceNormal;
-        }
-
-        // Top left triangle
-        if (v % width != 0 && (int)v - width - 1 >= 0)
-        {
-            AB = vertices[v - 1] - vertices[v];
-            AC = vertices[v - width - 1] - vertices[v];
-            faceNormal = Vector3.Normalize(Vector3.Cross(AB, AC));
+            
+            // Top Right
+            AB = vertices[v + 1] - vertices[v];
+            faceNormal = Vector3.Normalize(Vector3.Cross(AC, AB));
             normalSum += faceNormal;
         }
-
-        // Bottom left triangle
-        if (v % width != 0 && v + width < numVertices)
-        {
-            AB = vertices[v - 1] - vertices[v];
-            AC = vertices[v + width - 1] - vertices[v];
-            faceNormal = Vector3.Normalize(Vector3.Cross(AB, AC));
-
-            normalSum += faceNormal;
-        }
-
-        // Bottom right triangle
-        if ((v + 1) % width != 0 && v + width + 1 < numVertices)
+        
+        // Bottom Right triangle
+        if (x < mapWidth && y < mapHeight)
         {
             AB = vertices[v + 1] - vertices[v];
             AC = vertices[v + width + 1] - vertices[v];
             faceNormal = Vector3.Normalize(Vector3.Cross(AB, AC));
-
             normalSum += faceNormal;
         }
 
+        // Bottom Middle and Bottom Left triangles
+        if (x > 0 && y < mapHeight)
+        {
+            // Bottom Middle
+            AB = vertices[v + width] - vertices[v];
+            AC = vertices[v + width - 1] - vertices[v];
+            faceNormal = Vector3.Normalize(Vector3.Cross(AB, AC));
+            normalSum += faceNormal;
+            
+            // Bottom Left
+            AB = vertices[v - 1] - vertices[v];
+            faceNormal = Vector3.Normalize(Vector3.Cross(AC, AB));
+            normalSum += faceNormal;
+        }
+
+        
         // hlsl internally safeguards against division by 0
         return Vector3.Normalize(normalSum);
     }
 
     uint GetClosestVertex(float2 pos)
     {
-        // temp cpu variable
-        var deltaParams = new Vector4(transform.localScale.x / mapWidth, transform.localScale.z / mapHeight, transform.localScale.x,
-            transform.localScale.z);
-        int width = mapWidth + 1;
-        
-        
         // Rounding takes us from face position to nearest vertex row/column
-        int x = Mathf.RoundToInt(pos.x / deltaParams.x);
-        int y = Mathf.RoundToInt(pos.y / deltaParams.y);
+        int x = Mathf.RoundToInt(pos.x * mapWidth);
+        int y = Mathf.RoundToInt(pos.y * mapHeight);
 
         // We're off the map
         if (x < 0 || x > mapWidth || y < 0 || y > mapHeight)
         {
-            return 4294967295;
+            return UInt32.MaxValue;
         }
 
         // Correct vertex
-        return (uint)(x * width + y);
+        return (uint)(x * (mapHeight + 1) + y);
     }
 
 
     void SimulateDrop(uint v) 
     {
-        // temp cpu variable
-        var deltaParams = new Vector4(transform.localScale.x / mapWidth, transform.localScale.z / mapHeight, transform.localScale.x,
-            transform.localScale.z);
-        int width = mapWidth+1;
-        
         // ReSharper disable once PossibleLossOfFraction
-        float2 position = new float2(v / width * deltaParams.x, v % width * deltaParams.y);
+        float2 position = new float2(vertices[v].x, vertices[v].z);
         //float sediment = 0;
         float volume = 1;
         float2 velocity = new float2(0.0f, 0.0f);
-
-        bool first = true;
+        
         
         while (volume > 0)
         {
             // Get vertex
             uint i = GetClosestVertex(position);
-
-            if (first)
-            {
-                first = false;
-
-                if (i != v)
-                {
-                    Debug.Log("Bad " + v);
-                }
-            }
             
-            if (i == 4294967295)
-            {
-                /*points.Add(new Vector3(position.x, 0, position.y));
-                points2.Add(new Vector3(position.x, 0, position.y));*/
-
-                break;
-            }
+            // Early Out
+            if (i == UInt32.MaxValue) break;
             
-            //points.Add(new Vector3(vertices[i].x * 100, vertices[i].y, vertices[i].z * 100));
-            //points2.Add(new Vector3(position.x, 0, position.y));
-            
+            // for debugging
+            points.Add(new Vector3(position.x * 100, vertices[i].y, position.y * 100));
 
             // Calculate normal
             float3 vertexNormal = GetVertexNormal(i);
@@ -398,21 +378,12 @@ public class MeshGenerator : MonoBehaviour
 
     private void OnDrawGizmos()
     {
-        Gizmos.color = Color.white;
+        Gizmos.color = Color.red;
         if (points != null)
         {
             for (int i = 1; i < points.Count; i++)
             {
                 Gizmos.DrawLine(points[i - 1], points[i]);
-            }
-        }
-        
-        Gizmos.color = Color.red;
-        if (points2 != null)
-        {
-            for (int i = 1; i < points2.Count; i++)
-            {
-                Gizmos.DrawLine(points2[i - 1], points2[i]);
             }
         }
     }
