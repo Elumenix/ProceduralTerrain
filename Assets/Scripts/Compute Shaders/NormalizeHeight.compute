@@ -1,0 +1,26 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+// Buffers
+RWStructuredBuffer<float> _RangeValues; // For normalization. It's a float2
+RWStructuredBuffer<float> _HeightMapBuffer;
+
+// Global Variables
+uint numVertices;
+
+float InverseLerp(float minHeight, float maxHeight, float value)
+{
+    return (value - minHeight) / (maxHeight - minHeight);
+}  
+
+// The main point of this compute shader is just to normalize the heights of vertices to be between 0 and 1
+// I figured that this would be faster than doing it with the cpu for large numbers of vertices
+[numthreads(64,1,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    // This doesn't exist
+    if (id.x >= numVertices) return;
+
+    // Return a value between 0 and 1 based on where the height is between the min and max values
+    _HeightMapBuffer[id.x] = InverseLerp(_RangeValues[0], _RangeValues[1], _HeightMapBuffer[id.x]);
+}

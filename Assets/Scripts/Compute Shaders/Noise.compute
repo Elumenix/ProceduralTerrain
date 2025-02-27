@@ -1,0 +1,55 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+#include "SimplexNoise.hlsl"
+
+// Buffers
+StructuredBuffer<float2> _OffsetBuffer;
+StructuredBuffer<float> _MidPoint; // To make scale happen from the center. It's a float2
+RWStructuredBuffer<int> _RangeValues; // For normalization. It's a float2
+RWStructuredBuffer<float> _HeightMapBuffer;
+
+// Global Variables
+uint numVertices;
+uint mapWidth;
+uint octaves;
+uint normalPrecision;
+float scaleFactor;
+float persistence;
+float lacunarity;
+
+[numthreads(64,1,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    // This doesn't exist
+    if (id.x >= numVertices) return;
+
+    // What vertex this point represents; Starts from center instead of corner
+    float x = (float)(id.x % mapWidth) - _MidPoint[0];
+    float y = (float)(id.x / mapWidth) - _MidPoint[1];
+
+    // Starting values
+    float frequency = 1;
+    float amplitude = 1;
+    float2 pos = float2(x, y) / scaleFactor; // How zoomed in
+    
+    for (uint i = 0; i < octaves; i++)
+    {
+        // Pick a new position to sample from each octave
+        float2 newPos = (pos + _OffsetBuffer[i]) * frequency;
+
+        // Add a scaled value between -1 and 1
+        _HeightMapBuffer[id.x] += (snoise(newPos) * 2 - 1) * amplitude;
+
+        // Adjust/Weaken for next octave
+        frequency *= lacunarity;
+        amplitude *= persistence;
+    }
+
+    // The following operation only works on int or uint variables, so I need to convert my floats
+    // Multiplying by 1000 helps me confirm the number of significant digits to round by
+    int value = _HeightMapBuffer[id.x] * normalPrecision;
+    
+    // Atomically set min and max in the buffer
+    InterlockedMin(_RangeValues[0], value);
+    InterlockedMax(_RangeValues[1], value);
+}

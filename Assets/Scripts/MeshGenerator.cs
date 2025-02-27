@@ -19,12 +19,13 @@ public class MeshGenerator : MonoBehaviour
     };
     
     // Variables Changeable within the editor
+    public Noise noise;
     public DrawMode drawMode;
     public int mapWidth;
     public int mapHeight;
     public float heightMultiplier;
     public float noiseScale;
-    [Range(1,6)]
+    [Range(1,10)]
     public int octaves;
     [Range(0,1)]
     public float persistence;
@@ -41,12 +42,14 @@ public class MeshGenerator : MonoBehaviour
     
     // Mesh information
     private Vector3[] vertices;
-    private float[] altitudes;
+    //private float[] altitudes;
     private int[] indices;
     private Vector2[] uvs;
     private float[,] noiseMap;
+    private float[] heightMap;
 
     // Compute Shader Data
+    public ComputeShader meshGenShader;
     public ComputeShader erosionShader;
     private ComputeBuffer terrainBuffer;
     private ComputeBuffer altitudeBuffer;
@@ -99,7 +102,9 @@ public class MeshGenerator : MonoBehaviour
 
     public void GenerateMap()
     {
-        noiseMap = Noise.GenerateNoiseMap(mapWidth + 1, mapHeight + 1, seed, noiseScale, octaves, persistence,
+        /*noiseMap = Noise.GenerateNoiseMap(mapWidth + 1, mapHeight + 1, seed, noiseScale, octaves, persistence,
+            lacunarity, offset);*/
+        heightMap = noise.ComputeHeightMap(mapWidth + 1, mapHeight + 1, seed, noiseScale, octaves, persistence,
             lacunarity, offset);
         CreateMesh();
         UpdateMesh();
@@ -125,21 +130,53 @@ public class MeshGenerator : MonoBehaviour
         float heightScale = 1f / mapHeight;
         int size = (mapWidth + 1) * (mapHeight + 1);
         vertices = new Vector3[size];
-        altitudes = new float[size];
         uvs = new Vector2[size];
         indices = new int[mapWidth * mapHeight * 2 * 3]; // What's needed to draw the mesh
-        int num = 0;
         int indexNum = 0;
+        Color[] colorMap = new Color[(mapWidth+1) * (mapHeight+1)];
+        Texture2D texture = new(mapWidth + 1, mapHeight + 1);
+        
+        for (int i = 0; i < size; i++)
+        {
+            int x = i % (mapWidth + 1);
+            int z = i / (mapWidth + 1);
 
+            vertices[i] = new float3(x * widthScale, heightCurve.Evaluate(heightMap[i]) * heightMultiplier,
+                z * heightScale);
+
+            uvs[i] = new float2(x * widthScale, z * heightScale);
+            
+            colorMap[i] = Color.Lerp(Color.black, Color.white, heightMap[i]);
+
+            if (x != mapWidth && z != mapHeight)
+            {
+                // We're forming a square here with vertices from the Top left vertex
+                // Right Triangle
+                indices[indexNum] = i;
+                indices[indexNum + 1] = i + mapWidth + 1;
+                indices[indexNum + 2] = i + 1;
+                    
+                // Bottom Triangle
+                indices[indexNum + 3] = i + 1;
+                indices[indexNum + 4] = i + mapWidth + 1;
+                indices[indexNum + 5] = i + mapWidth + 2;
+                indexNum += 6;
+            }
+        }
+        
+        texture.SetPixels(colorMap);
+        texture.Apply();
+        textureRenderer.sharedMaterial.mainTexture = texture;
+        
+        /*
         // Trying to set the texture as perlin noise
         for (int x = 0; x <= mapWidth; x++)
         {
             for (int z = 0; z <= mapHeight; z++)
             {
                 vertices[num] = new Vector3(x * widthScale,
-                    heightCurve.Evaluate(noiseMap[x, z]) * heightMultiplier, z * heightScale);
+                    heightCurve.Evaluate(heightMap[num]) * heightMultiplier, z * heightScale);
                 
-                altitudes[num] = vertices[num][1];
                 uvs[num] = new Vector2(x * widthScale, z * heightScale);
                 num++;
                 
@@ -159,9 +196,9 @@ public class MeshGenerator : MonoBehaviour
                 indices[indexNum + 5] = indices[indexNum];
                 indexNum += 6;
             }
-        }
-        textureRenderer.sharedMaterial.SetFloat(MinHeight, 0);
-        textureRenderer.sharedMaterial.SetFloat(MaxHeight, heightMultiplier);
+        }*/
+        //textureRenderer.sharedMaterial.SetFloat(MinHeight, 0);
+        //textureRenderer.sharedMaterial.SetFloat(MaxHeight, heightMultiplier);
     }
 
     // Eventually refactor the following to be used to change draw modes. Leverage altitude list for this
@@ -367,7 +404,7 @@ public class MeshGenerator : MonoBehaviour
             float3 vertexNormal = GetVertexNormal(i);
             
             // Max Sediment a particle can hold
-            float max = sedimentMax * Vector3.Magnitude(new Vector3(velocity.x, 0, velocity.y)) * volume;
+            float max = sedimentMax * math.length(velocity) * volume;
             //Debug.Log("Max: " + max);
             float3 vert = vertices[i];
             
