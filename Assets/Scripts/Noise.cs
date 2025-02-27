@@ -1,7 +1,5 @@
-using System;
 using Unity.Mathematics;
 using UnityEngine;
-using UnityEngine.Windows;
 
 public class Noise : MonoBehaviour
 {
@@ -23,11 +21,12 @@ public class Noise : MonoBehaviour
     private static readonly int MapWidth = Shader.PropertyToID("mapWidth");
     private static readonly int NumVertices = Shader.PropertyToID("numVertices");
     private static readonly int MidPoint = Shader.PropertyToID("_MidPoint");
-    
-    
+    private static readonly int NoiseType = Shader.PropertyToID("noiseType");
+
+
     // Version of this function where we offload work to the gpu
     public float[] ComputeHeightMap(int mapWidth, int mapHeight, int seed, float scale, int octaves,
-        float persistence, float lacunarity, Vector2 offset)
+        float persistence, float lacunarity, Vector2 offset, int noiseType)
     {
         // Set seed so this will be consistent
         rng = new System.Random(seed);
@@ -73,6 +72,7 @@ public class Noise : MonoBehaviour
         noiseShader.SetFloat(ScaleFactor, scale);
         noiseShader.SetFloat(Persistence, persistence);
         noiseShader.SetFloat(Lacunarity, lacunarity);
+        noiseShader.SetInt(NoiseType, noiseType);
         
         
         // Dispatch

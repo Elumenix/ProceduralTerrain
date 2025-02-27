@@ -17,6 +17,13 @@ public class MeshGenerator : MonoBehaviour
         heightMap,
         coloredHeightMap
     };
+
+    public enum NoiseType
+    {
+        Perlin,
+        Simplex,
+        Worley
+    }
     
     // Variables Changeable within the editor
     public Noise noise;
@@ -35,6 +42,7 @@ public class MeshGenerator : MonoBehaviour
     public Vector2 offset;
     //public TerrainType[] regions;
     public AnimationCurve heightCurve;
+    public NoiseType noiseType;
     
     // Object reference variables
     private Renderer textureRenderer;
@@ -105,7 +113,7 @@ public class MeshGenerator : MonoBehaviour
         /*noiseMap = Noise.GenerateNoiseMap(mapWidth + 1, mapHeight + 1, seed, noiseScale, octaves, persistence,
             lacunarity, offset);*/
         heightMap = noise.ComputeHeightMap(mapWidth + 1, mapHeight + 1, seed, noiseScale, octaves, persistence,
-            lacunarity, offset);
+            lacunarity, offset, (int)noiseType + 1);
         CreateMesh();
         UpdateMesh();
     }

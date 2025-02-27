@@ -1,6 +1,8 @@
 // Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel CSMain
 #include "SimplexNoise.hlsl"
+#include "PerlinNoise.hlsl"
+#include "WorleyNoise.hlsl"
 
 // Buffers
 StructuredBuffer<float2> _OffsetBuffer;
@@ -9,6 +11,7 @@ RWStructuredBuffer<int> _RangeValues; // For normalization. It's a float2
 RWStructuredBuffer<float> _HeightMapBuffer;
 
 // Global Variables
+uint noiseType;
 uint numVertices;
 uint mapWidth;
 uint octaves;
@@ -35,10 +38,22 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     for (uint i = 0; i < octaves; i++)
     {
         // Pick a new position to sample from each octave
-        float2 newPos = (pos + _OffsetBuffer[i]) * frequency;
+        float2 newPos = (pos - _OffsetBuffer[i]) * frequency;
 
-        // Add a scaled value between -1 and 1
-        _HeightMapBuffer[id.x] += (snoise(newPos) * 2 - 1) * amplitude;
+        // Add a scaled value between -1 and 1 using specified noise type
+        if (noiseType == 1)
+        {
+            _HeightMapBuffer[id.x] += (perlin(newPos) * 2 - 1) * amplitude;
+        }
+        else if (noiseType == 2)
+        {
+            _HeightMapBuffer[id.x] += (simplex(newPos) * 2 - 1) * amplitude;
+        }
+        else // if (noiseType == 3)
+        {
+            _HeightMapBuffer[id.x] += (worley(newPos) * 2 - 1) * amplitude;
+        }
+        
 
         // Adjust/Weaken for next octave
         frequency *= lacunarity;

@@ -30,7 +30,7 @@ float2 mod289(float2 x)
 
 float3 permute(float3 x)
 {
-    return mod289((x * 34.0 + 1.0) * x);
+    return mod289((x * 34.0 + 10.0) * x);
 }
 
 float3 taylorInvSqrt(float3 r)
@@ -38,7 +38,7 @@ float3 taylorInvSqrt(float3 r)
     return 1.79284291400159 - 0.85373472095314 * r;
 }
 
-float snoise(float2 v)
+float simplex(float2 v)
 {
     const float4 C = float4(0.211324865405187,  // (3.0-sqrt(3.0))/6.0
         0.366025403784439,  // 0.5*(sqrt(3.0)-1.0)
