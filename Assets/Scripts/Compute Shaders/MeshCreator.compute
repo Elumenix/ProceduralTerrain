@@ -1,0 +1,48 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+// Buffers
+StructuredBuffer<int> _Dimension; // {mapWidth, mapHeight}
+StructuredBuffer<float> _Scale; // essentially a float 2
+StructuredBuffer<float> _HeightMap;
+RWStructuredBuffer<float3> _VertexBuffer;
+RWStructuredBuffer<float2> _UVBuffer;
+RWStructuredBuffer<uint> _IndexBuffer;
+
+// Variables
+uint numVertices;
+float heightMultiplier;
+
+[numthreads(1024,1,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= numVertices) return; // Don't need to iterate on
+    
+    int x = id.x % (_Dimension[0] + 1);
+    int z = id.x / (_Dimension[0] + 1);
+
+    _VertexBuffer[id.x] = float3(x * _Scale[0], /*heightCurve.Evaluate(_HeightMap[id.x])*/ _HeightMap[id.x] * heightMultiplier,
+        z * _Scale[1]);
+
+    _UVBuffer[id.x] = float2(x * _Scale[0], z * _Scale[1]);
+        
+    //colorMap[i] = Color.Lerp(Color.black, Color.white, heightMap[i]);
+
+    // Cant form a square outside the bounds of the map
+    if (x != _Dimension[0] && z != _Dimension[1])
+    {
+        int indexNum = id.x * 6 - z * 6; // z is to skip edge
+        
+        // We're forming a square here with vertices from the Top left vertex
+        // Right Triangle
+        _IndexBuffer[indexNum] = id.x;
+        _IndexBuffer[indexNum + 1] = id.x + _Dimension[0] + 1;
+        _IndexBuffer[indexNum + 2] = id.x + 1;
+                
+        // Bottom Triangle
+        _IndexBuffer[indexNum + 3] = id.x + 1;
+        _IndexBuffer[indexNum + 4] = id.x + _Dimension[0] + 1;
+        _IndexBuffer[indexNum + 5] = id.x + _Dimension[0] + 2;
+    }
+    
+}

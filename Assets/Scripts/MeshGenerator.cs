@@ -4,6 +4,7 @@ using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Rendering;
 using Random = UnityEngine.Random;
+// ReSharper disable ArrangeObjectCreationWhenTypeEvident
 
 [ExecuteInEditMode]
 [RequireComponent(typeof(MeshFilter))]
@@ -59,9 +60,7 @@ public class MeshGenerator : MonoBehaviour
     // Compute Shader Data
     public ComputeShader meshGenShader;
     public ComputeShader erosionShader;
-    private ComputeBuffer terrainBuffer;
-    private ComputeBuffer altitudeBuffer;
-    private ComputeBuffer rainDropBuffer;
+
     
     // Erosion Variables
     public int numRainDrops;
@@ -78,15 +77,27 @@ public class MeshGenerator : MonoBehaviour
     public float depositionRate = .25f;
     [Range(0,1)]
     public float softness = .1f;
-    
-    // String search optimization
+
+    #region StringSearchOptimization
+    // String search optimization for material shader properties
     private static readonly int MinHeight = Shader.PropertyToID("_MinHeight");
     private static readonly int MaxHeight = Shader.PropertyToID("_MaxHeight");
+    
+    // String search optimization for Mesh Creation
+    private static readonly int Dimension = Shader.PropertyToID("_Dimension");
+    private static readonly int Scale = Shader.PropertyToID("_Scale");
+    private static readonly int HeightMap = Shader.PropertyToID("_HeightMap");
+    private static readonly int UVBuffer = Shader.PropertyToID("_UVBuffer");
     private static readonly int VertexBuffer = Shader.PropertyToID("_VertexBuffer");
-    private static readonly int NumVertices = Shader.PropertyToID("numVertices");
+    private static readonly int IndexBuffer = Shader.PropertyToID("_IndexBuffer");
+    private static readonly int HeightMultiplier = Shader.PropertyToID("heightMultiplier");
+    
+    // String search optimization for Erosion
+    private static readonly int NumVertices = Shader.PropertyToID("numVertices"); // TODO Find a way to share following two between shaders
     private static readonly int Width = Shader.PropertyToID("width");
     private static readonly int AltitudeBuffer = Shader.PropertyToID("_AltitudeBuffer");
     private static readonly int RainDropBuffer = Shader.PropertyToID("RainDropBuffer");
+    #endregion
 
     void Start()
     {
@@ -110,11 +121,10 @@ public class MeshGenerator : MonoBehaviour
 
     public void GenerateMap()
     {
-        /*noiseMap = Noise.GenerateNoiseMap(mapWidth + 1, mapHeight + 1, seed, noiseScale, octaves, persistence,
-            lacunarity, offset);*/
         heightMap = noise.ComputeHeightMap(mapWidth + 1, mapHeight + 1, seed, noiseScale, octaves, persistence,
             lacunarity, offset, (int)noiseType + 1);
-        CreateMesh();
+        //CreateMeshGPU();
+        CreateMeshGPU();
         UpdateMesh();
     }
 
@@ -126,10 +136,17 @@ public class MeshGenerator : MonoBehaviour
         mesh.triangles = indices;
         mesh.uv = uvs;
         mesh.RecalculateNormals(); // Fixes Lighting
+        
+        // Update Materials
+        textureRenderer.sharedMaterial.SetFloat(MinHeight, 0);
+        textureRenderer.sharedMaterial.SetFloat(MaxHeight, heightMultiplier);
     }
 
-    void CreateMesh()
+    void CreateMeshCPU()
     {
+        noiseMap = Noise.GenerateNoiseMap(mapWidth + 1, mapHeight + 1, seed, noiseScale, octaves, persistence,
+            lacunarity, offset);
+        
         // This was originally supposed to be two different methods, but it became much more efficient,
         // Albeit messy looking, to combine them to only loop through the map once
         
@@ -141,49 +158,16 @@ public class MeshGenerator : MonoBehaviour
         uvs = new Vector2[size];
         indices = new int[mapWidth * mapHeight * 2 * 3]; // What's needed to draw the mesh
         int indexNum = 0;
-        Color[] colorMap = new Color[(mapWidth+1) * (mapHeight+1)];
-        Texture2D texture = new(mapWidth + 1, mapHeight + 1);
-        
-        for (int i = 0; i < size; i++)
-        {
-            int x = i % (mapWidth + 1);
-            int z = i / (mapWidth + 1);
+        int num = 0;
 
-            vertices[i] = new float3(x * widthScale, heightCurve.Evaluate(heightMap[i]) * heightMultiplier,
-                z * heightScale);
-
-            uvs[i] = new float2(x * widthScale, z * heightScale);
-            
-            colorMap[i] = Color.Lerp(Color.black, Color.white, heightMap[i]);
-
-            if (x != mapWidth && z != mapHeight)
-            {
-                // We're forming a square here with vertices from the Top left vertex
-                // Right Triangle
-                indices[indexNum] = i;
-                indices[indexNum + 1] = i + mapWidth + 1;
-                indices[indexNum + 2] = i + 1;
-                    
-                // Bottom Triangle
-                indices[indexNum + 3] = i + 1;
-                indices[indexNum + 4] = i + mapWidth + 1;
-                indices[indexNum + 5] = i + mapWidth + 2;
-                indexNum += 6;
-            }
-        }
         
-        texture.SetPixels(colorMap);
-        texture.Apply();
-        textureRenderer.sharedMaterial.mainTexture = texture;
-        
-        /*
         // Trying to set the texture as perlin noise
         for (int x = 0; x <= mapWidth; x++)
         {
             for (int z = 0; z <= mapHeight; z++)
             {
                 vertices[num] = new Vector3(x * widthScale,
-                    heightCurve.Evaluate(heightMap[num]) * heightMultiplier, z * heightScale);
+                    heightCurve.Evaluate(noiseMap[x,z]) * heightMultiplier, z * heightScale);
                 
                 uvs[num] = new Vector2(x * widthScale, z * heightScale);
                 num++;
@@ -204,9 +188,68 @@ public class MeshGenerator : MonoBehaviour
                 indices[indexNum + 5] = indices[indexNum];
                 indexNum += 6;
             }
-        }*/
-        //textureRenderer.sharedMaterial.SetFloat(MinHeight, 0);
-        //textureRenderer.sharedMaterial.SetFloat(MaxHeight, heightMultiplier);
+        }
+    }
+
+    void CreateMeshGPU()
+    {
+        // Pass map dimensions to shader
+        int[] dim = {mapWidth, mapHeight};
+        ComputeBuffer dimension = new ComputeBuffer(2, 4);
+        dimension.SetData(dim);
+        meshGenShader.SetBuffer(0, Dimension, dimension);
+        
+        // Pass distance between vertices to shader
+        float[] scale = {1f / mapWidth, 1f / mapHeight};
+        ComputeBuffer mapScale = new ComputeBuffer(2, 4);
+        mapScale.SetData(scale);
+        meshGenShader.SetBuffer(0, Scale, mapScale);
+
+        // Pass precalculated heightmap to shader
+        ComputeBuffer heights = new ComputeBuffer(heightMap.Length, 4);
+        heights.SetData(heightMap);
+        meshGenShader.SetBuffer(0, HeightMap, heights);
+        
+        // number of vertices/uvs
+        int size = (mapWidth + 1) * (mapHeight + 1);
+        
+        // Create Buffer to hold vertices
+        vertices = new Vector3[size];
+        ComputeBuffer vertexBuffer = new ComputeBuffer(size, 12);
+        vertexBuffer.SetData(vertices);
+        meshGenShader.SetBuffer(0, VertexBuffer, vertexBuffer);
+        
+        // Create Buffer to hold UVs
+        uvs = new Vector2[size];
+        ComputeBuffer uvBuffer = new ComputeBuffer(size, 8);
+        uvBuffer.SetData(uvs);
+        meshGenShader.SetBuffer(0, UVBuffer, uvBuffer);
+        
+        // Create Buffer to hold indices
+        indices = new int[mapWidth * mapHeight * 6]; // 6 indices a square (two triangles)
+        ComputeBuffer indexBuffer = new ComputeBuffer(indices.Length, 4);
+        indexBuffer.SetData(indices);
+        meshGenShader.SetBuffer(0, IndexBuffer, indexBuffer);
+        
+        // Pass Variables
+        meshGenShader.SetInt(NumVertices, size);
+        meshGenShader.SetFloat(HeightMultiplier, heightMultiplier);
+        
+        // Dispatch Shader
+        meshGenShader.Dispatch(0, Mathf.CeilToInt(size / 1024.0f), 1, 1);
+
+        // Retrieve data: UpdateMesh() will use these values
+        vertexBuffer.GetData(vertices);
+        uvBuffer.GetData(uvs);
+        indexBuffer.GetData(indices);
+        
+        // Release Buffers
+        dimension.Release();
+        mapScale.Release();
+        heights.Release();
+        vertexBuffer.Release();
+        uvBuffer.Release();
+        indexBuffer.Release();
     }
 
     // Eventually refactor the following to be used to change draw modes. Leverage altitude list for this
@@ -253,6 +296,11 @@ public class MeshGenerator : MonoBehaviour
 
     public void ComputeErosion()
     {
+        //ComputeBuffer terrainBuffer;
+        //ComputeBuffer altitudeBuffer;
+        //ComputeBuffer rainDropBuffer;
+        
+        
         points = new List<Vector3>();
         
         // PreDetermine raindrop positions
@@ -292,7 +340,6 @@ public class MeshGenerator : MonoBehaviour
         mesh.RecalculateNormals();
         
         // Clean up
-        terrainBuffer.Release();
         terrainBuffer.Release();
         altitudeBuffer.Release();
         rainDropBuffer.Release();*/
