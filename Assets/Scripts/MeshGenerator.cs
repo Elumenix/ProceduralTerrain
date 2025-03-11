@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Rendering;
-using Random = UnityEngine.Random;
+using Random = System.Random;
 // ReSharper disable ArrangeObjectCreationWhenTypeEvident
 
 [ExecuteInEditMode]
@@ -64,17 +64,14 @@ public class MeshGenerator : MonoBehaviour
     
     // Erosion Variables
     public int numRainDrops;
-
-    private List<Vector3> points;
-
-    [Range(0, 10)]
-    public float accelMultiplier = 1.0f;
-    [Range(0,1)]
-    public float frictionMultiplier = .9f;
+    [Range(0, 1)]
+    public float inertia = 1.0f;
     [Range(0,1)]
     public float sedimentMax = .1f;
     [Range(0,1)]
     public float depositionRate = .25f;
+    [Range(.005f, .05f)] 
+    public float evaporationRate = .2f;
     [Range(0,1)]
     public float softness = .1f;
 
@@ -93,10 +90,14 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int HeightMultiplier = Shader.PropertyToID("heightMultiplier");
     
     // String search optimization for Erosion
-    private static readonly int NumVertices = Shader.PropertyToID("numVertices"); // TODO Find a way to share following two between shaders
-    private static readonly int Width = Shader.PropertyToID("width");
-    private static readonly int AltitudeBuffer = Shader.PropertyToID("_AltitudeBuffer");
-    private static readonly int RainDropBuffer = Shader.PropertyToID("RainDropBuffer");
+    private static readonly int NumVertices = Shader.PropertyToID("numVertices"); 
+    private static readonly int RainDropBuffer = Shader.PropertyToID("_RainDropBuffer");
+    private static readonly int MaxSediment = Shader.PropertyToID("maxSediment");
+    private static readonly int DepositionRate = Shader.PropertyToID("depositionRate");
+    private static readonly int Softness = Shader.PropertyToID("softness");
+    private static readonly int EvaporationRate = Shader.PropertyToID("evaporationRate");
+    private static readonly int Inertia = Shader.PropertyToID("inertia");
+
     #endregion
 
     void Start()
@@ -121,11 +122,30 @@ public class MeshGenerator : MonoBehaviour
 
     public void GenerateMap()
     {
+        // Update heightMap
         heightMap = noise.ComputeHeightMap(mapWidth + 1, mapHeight + 1, seed, noiseScale, octaves, persistence,
             lacunarity, offset, (int)noiseType + 1);
-        //CreateMeshGPU();
+        
+        // Set up Shared Buffers
+        // Pass map dimensions to shaders
+        int[] dim = {mapWidth, mapHeight};
+        ComputeBuffer dimension = new ComputeBuffer(2, 4);
+        dimension.SetData(dim);
+        meshGenShader.SetBuffer(0, Dimension, dimension);
+        erosionShader.SetBuffer(0, Dimension, dimension);
+        
+        // Set Shared variable
+        int numVertices = (mapWidth + 1) * (mapHeight + 1);
+        meshGenShader.SetInt(NumVertices, numVertices);
+        erosionShader.SetInt(NumVertices, numVertices);
+
+        // Create Mesh and Erode
         CreateMeshGPU();
+        ComputeErosion();
         UpdateMesh();
+        
+        // Release Shared Buffer
+        dimension.Release();
     }
 
     void UpdateMesh()
@@ -193,12 +213,6 @@ public class MeshGenerator : MonoBehaviour
 
     void CreateMeshGPU()
     {
-        // Pass map dimensions to shader
-        int[] dim = {mapWidth, mapHeight};
-        ComputeBuffer dimension = new ComputeBuffer(2, 4);
-        dimension.SetData(dim);
-        meshGenShader.SetBuffer(0, Dimension, dimension);
-        
         // Pass distance between vertices to shader
         float[] scale = {1f / mapWidth, 1f / mapHeight};
         ComputeBuffer mapScale = new ComputeBuffer(2, 4);
@@ -232,7 +246,6 @@ public class MeshGenerator : MonoBehaviour
         meshGenShader.SetBuffer(0, IndexBuffer, indexBuffer);
         
         // Pass Variables
-        meshGenShader.SetInt(NumVertices, size);
         meshGenShader.SetFloat(HeightMultiplier, heightMultiplier);
         
         // Dispatch Shader
@@ -244,7 +257,6 @@ public class MeshGenerator : MonoBehaviour
         indexBuffer.GetData(indices);
         
         // Release Buffers
-        dimension.Release();
         mapScale.Release();
         heights.Release();
         vertexBuffer.Release();
@@ -296,61 +308,43 @@ public class MeshGenerator : MonoBehaviour
 
     public void ComputeErosion()
     {
-        //ComputeBuffer terrainBuffer;
-        //ComputeBuffer altitudeBuffer;
-        //ComputeBuffer rainDropBuffer;
+        // Reapplying seed for somewhat consistent results
+        Random rng = new Random(seed);
         
-        
-        points = new List<Vector3>();
-        
-        // PreDetermine raindrop positions
-        uint[] rd = new uint[numRainDrops];
+        // Generate raindrop positions
+        int[] rd = new int[numRainDrops];
         int size = vertices.Length;
         for (int i = 0; i < numRainDrops; i++)
         {
-            rd[i] = (uint)Random.Range(0, size);
+            rd[i] = rng.Next(0, size);
         }
         
-        /*
         // Manage Compute Buffers
-        terrainBuffer = new ComputeBuffer(size, 12);
+        ComputeBuffer terrainBuffer = new(size, 12);
         terrainBuffer.SetData(vertices);
-        altitudeBuffer = new ComputeBuffer(size, 4);
-        altitudeBuffer.SetData(altitudes);
-        rainDropBuffer = new ComputeBuffer(numRainDrops, 4);
+        ComputeBuffer rainDropBuffer = new(numRainDrops, 4);
         rainDropBuffer.SetData(rd);
         
-        // Set necessary Data
+        // Set Buffers
         erosionShader.SetBuffer(0, VertexBuffer, terrainBuffer);
-        erosionShader.SetBuffer(0, AltitudeBuffer, altitudeBuffer);
         erosionShader.SetBuffer(0, RainDropBuffer, rainDropBuffer);
-        erosionShader.SetInt(NumVertices, size);
-        erosionShader.SetInt(Width, mapWidth);
-        erosionShader.SetVector("deltaParams",
-            new Vector4(transform.localScale.x / mapWidth, transform.localScale.z / mapHeight, transform.localScale.x,
-            transform.localScale.z));
+        
+        // Set Variables
+        erosionShader.SetFloat(Inertia, inertia);
+        erosionShader.SetFloat(MaxSediment, sedimentMax);
+        erosionShader.SetFloat(DepositionRate, depositionRate);
+        erosionShader.SetFloat(EvaporationRate, evaporationRate);
+        erosionShader.SetFloat(Softness, softness);
         
         // Execute erosion shader
         erosionShader.Dispatch(0, Mathf.CeilToInt(numRainDrops / 1024f), 1, 1);
         
-        // Copy new vertex data and apply
+        // Copy new vertex data, will be used in update mesh
         terrainBuffer.GetData(vertices);
-        altitudeBuffer.GetData(altitudes);
-        mesh.vertices = vertices;
-        mesh.RecalculateNormals();
         
         // Clean up
         terrainBuffer.Release();
-        altitudeBuffer.Release();
-        rainDropBuffer.Release();*/
-
-        foreach (uint i in rd)
-        {
-            SimulateDrop(i);
-        }
-        
-        mesh.vertices = vertices;
-        mesh.RecalculateNormals();
+        rainDropBuffer.Release();
     }
     
     
@@ -490,25 +484,14 @@ public class MeshGenerator : MonoBehaviour
             // Evaporation
             volume -= .01f;
 
-            // Acceleration
-            velocity += new float2(vertexNormal.x,vertexNormal.z) * accelMultiplier;
-            // Friction
-            velocity *= (1 - frictionMultiplier);
+            // Update velocity based on normals
+            float2 dir = new float2(-vertexNormal.x, -vertexNormal.z);
+            velocity = velocity * inertia - dir * (1-inertia);
 
             // Update Position
             position += velocity;
         }
     }
 
-    private void OnDrawGizmos()
-    {
-        /*Gizmos.color = Color.red;
-        if (points != null)
-        {
-            for (int i = 1; i < points.Count; i++)
-            {
-                Gizmos.DrawLine(points[i - 1], points[i]);
-            }
-        }*/
-    }
+
 }
