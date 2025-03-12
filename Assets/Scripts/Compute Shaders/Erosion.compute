@@ -15,139 +15,100 @@ float depositionRate;
 float evaporationRate;
 float softness;
 
-
-// v is the vertex number that we want to get the normal of
-float3 GetVertexNormal(uint v)
+float3 GetGradientAndHeight(float2 pos)
 {
-    uint width = _Dimension[0] + 1;
-    uint x = v % width;
-    uint y = (v - x) / width;
-    
-    float3 normalSum = float3(0.0f, 0.0f, 0.0f);
-    float3 AB, AC, faceNormal;
-    
-    
-    // Top Left triangle
-    if (x > 0 && y > 0)
-    {
-        AB = _VertexBuffer[v - 1] - _VertexBuffer[v];
-        AC = _VertexBuffer[v - width] - _VertexBuffer[v];
-        faceNormal = normalize(cross(AB, AC));
-        normalSum += faceNormal;
-    }
-    
-    // Top Middle and Top Right triangles
-    if (x < _Dimension[0] && y > 0)
-    {
-        // Top Middle
-        AB = _VertexBuffer[v - width] - _VertexBuffer[v];
-        AC = _VertexBuffer[v - width + 1] - _VertexBuffer[v];
-        faceNormal = normalize(cross(AB, AC));
-        normalSum += faceNormal;
-        
-        // Top Right
-        AB = _VertexBuffer[v + 1] - _VertexBuffer[v];
-        faceNormal = normalize(cross(AC, AB));
-        normalSum += faceNormal;
-    }
-    
-    // Bottom Right triangle
-    if (x < _Dimension[0] && y < _Dimension[1])
-    {
-        AB = _VertexBuffer[v + 1] - _VertexBuffer[v];
-        AC = _VertexBuffer[v + width + 1] - _VertexBuffer[v];
-        faceNormal = normalize(cross(AB, AC));
-        normalSum += faceNormal;
-    }
+    // Get row/column of top left index of (square) face
+    int row = (int)pos.x;
+    int col = (int)pos.y;
+    int index = col * (_Dimension[0] + 1) + row;
 
-    // Bottom Middle and Bottom Left triangles
-    if (x > 0 && y < _Dimension[1])
-    {
-        // Bottom Middle
-        AB = _VertexBuffer[v + width] - _VertexBuffer[v];
-        AC = _VertexBuffer[v + width - 1] - _VertexBuffer[v];
-        faceNormal = normalize(cross(AB, AC));
-        normalSum += faceNormal;
-        
-        // Bottom Left
-        AB = _VertexBuffer[v - 1] - _VertexBuffer[v];
-        faceNormal = normalize(cross(AC, AB));
-        normalSum += faceNormal;
-    }
-
+    // Get height of all vertices of square
+    float nw = _VertexBuffer[index].y;
+    float ne = _VertexBuffer[index + 1].y;
+    float sw = _VertexBuffer[index + (_Dimension[0] + 1)];
+    float se = _VertexBuffer[index + (_Dimension[0] + 1) + 1];
     
-    // hlsl internally safeguards against division by 0
-    return normalize(normalSum);
-}
+    // Get coordinates of drop in (square) face.
+    // Top left is (0,0)
+    float u = pos.x - row;
+    float v = pos.y - col;
 
+    // Bilinear Interpolation of heights to get gradient direction and height
+    float angleX = (ne - nw) * (1-v) + (se - sw) * v;
+    float angleY = (sw - nw) * (1-u) + (se - ne) * u;
+    float height = nw * (1-u) * (1-v) + ne * u * (1-v) + sw * (1-u) * v + se * u * v;
 
-// Gets closest vertex to world position
-uint GetClosestVertex(float2 pos)
-{
-    // Rounding takes us from face position to nearest vertex row/column
-    int x = round(pos.x * _Dimension[0]);
-    int y = round(pos.y * _Dimension[1]);
-
-    // We're off the map
-    if (x < 0 || (uint)x > _Dimension[0] || y < 0 || (uint)y > _Dimension[1])
-    {
-        return MAX_UINT;
-    }
-
-    // Correct vertex
-    return x * (_Dimension[1] + 1) + y;
+    return float3(angleX, angleY, height);
 }
 
 
 // Simulate a raindrop picking up and depositing sediment
 void SimulateDrop(uint v) 
 {
-    float2 position = float2(_VertexBuffer[v].x, _VertexBuffer[v].z);
-    float sediment = 0;
-    float volume = 1;
+    // Local drop variables
+    // Position is on a grid between mapWidth + 1 and mapHeight + 1
+    float2 position = float2(float(v) % (_Dimension[0] + 1), float(v) / (_Dimension[0] + 1));
     float2 velocity = float2(0.0f, 0.0f);
-    
-    
+    float2 dir = float2(0.0f, 0.0f);
+    float volume = 1;
+    float sediment = 0;
+
+    // Max Steps to ensure drop doesn't move endlessly
+    // TODO: Perhaps find a way so that heightAndGradient aren't calculated twice
     while (volume > 0)
     {
-        // Get vertex
-        uint i = GetClosestVertex(position);
-        
-        // Early Out
-        if (i == (uint)MAX_UINT) break;
+        float3 g = GetGradientAndHeight(position);
+        float2 gradient = float2(g.x, g.y);
+        float oldHeight = g.z;
 
-        // Calculate normal
-        float3 vertexNormal = GetVertexNormal(i);
-        
-        // Max Sediment a particle can hold
-        float maxSed = maxSediment * length(velocity) * volume;
-        float3 vert = _VertexBuffer[i];
-        
-        if (sediment > maxSed)
-        {
-            // Deposit sediment to terrain
-            float depositAmount = depositionRate * (sediment - maxSed);
-            sediment -= depositAmount;
-            vert[1] += depositAmount;
-        }
-        else
-        {
-            // Take sediment from the terrain
-            float erosionAmount = softness * (maxSed - sediment);
-            sediment += erosionAmount;
-            vert[1] -= erosionAmount;
-        }
-        _VertexBuffer[i] = vert;
-        
-        // Evaporation
-        volume -= evaporationRate;
+        // Update flow direction based on gradient
+        // Inertia determines how much gradient is taken into account
+        dir = dir * inertia - gradient * (1 - inertia);
+        normalize(dir); // Drop moves fixed distance, so erosion is evenly distributed
 
-        // Update velocity based on normals
-        float2 dir = float2(-vertexNormal.x, -vertexNormal.z);
-        velocity = velocity * inertia - dir * (1-inertia);
-        
+        // Find next position
+        float2 newPos = position + dir;
+        float newHeight = GetGradientAndHeight(newPos).z;
+
+        // is drop ascending?
+        if (newHeight > oldHeight)
+        {
+            // Either completely fill pit at oldPos or deposit all sediment there
+            float fill = min(sediment, oldHeight - newHeight);
+            // TODO: doStuff
+        }
+        else // downHill
+        {
+            // Speed and size of the drop determine how much sediment it can hold
+            float minSlope = .03f;
+            float dropCapacity = max(oldHeight - newHeight, minSlope) * velocity * volume * maxSediment;
+
+            // can the drop hold more sediment
+            if (sediment > dropCapacity)
+            {
+                float depAmount = (sediment - dropCapacity) * depositionRate;
+                // subtract and put at old position
+                
+            }
+            else
+            {
+                // Can't take more sediment than height difference
+                float depAmount = min((dropCapacity - sediment) * softness, oldHeight - newHeight);
+            }
+        }
+
+        // Velocity is adjusted depending upon the slope and gravity
+        float gravity = 9.81f;
+        velocity = sqrt(pow(velocity,2) + (newHeight - oldHeight) * gravity);
+
         // Update Position
-        position += velocity;
+        position = newPos;
+        volume = volume * (1-evaporationRate);
+
+
+
+
+        
     }
 }
 
