@@ -1,4 +1,3 @@
-using System;
 using UnityEditor;
 using UnityEngine;
 
@@ -14,17 +13,19 @@ namespace Editor
             // Automatically redraws if something in the inspector is changed
             if (DrawDefaultInspector())
             {
-                meshGen.GenerateMap();
+                meshGen.StopAllCoroutines();
+                meshGen.dimension?.Release(); // Prevent Leak
+                meshGen.StartCoroutine(meshGen.GenerateMap());
             }
 
-            if (GUILayout.Button("Erode"))
+            /*if (GUILayout.Button("Erode"))
             {
                 meshGen.ComputeErosion();
-            }
+            }*/
             
             if (GUILayout.Button("Reset"))
             {
-                meshGen.GenerateMap();
+                meshGen.StartCoroutine(meshGen.GenerateMap());
             }
         }
     }

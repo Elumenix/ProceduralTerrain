@@ -120,20 +120,20 @@ void SimulateDrop(uint v)
         float3 vertexNormal = GetVertexNormal(i);
         
         // Max Sediment a particle can hold
-        float max = maxSediment * length(velocity) * volume;
+        float maxSed = maxSediment * length(velocity) * volume;
         float3 vert = _VertexBuffer[i];
         
-        if (sediment > max)
+        if (sediment > maxSed)
         {
             // Deposit sediment to terrain
-            float depositAmount = depositionRate * (sediment - max);
+            float depositAmount = depositionRate * (sediment - maxSed);
             sediment -= depositAmount;
             vert[1] += depositAmount;
         }
         else
         {
             // Take sediment from the terrain
-            float erosionAmount = softness * (max - sediment);
+            float erosionAmount = softness * (maxSed - sediment);
             sediment += erosionAmount;
             vert[1] -= erosionAmount;
         }

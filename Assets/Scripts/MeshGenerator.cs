@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using Unity.Mathematics;
 using UnityEngine;
@@ -60,6 +61,8 @@ public class MeshGenerator : MonoBehaviour
     // Compute Shader Data
     public ComputeShader meshGenShader;
     public ComputeShader erosionShader;
+    public ComputeBuffer dimension;
+
 
     
     // Erosion Variables
@@ -107,7 +110,7 @@ public class MeshGenerator : MonoBehaviour
         mesh = new Mesh();
         GetComponent<MeshFilter>().mesh = mesh;
         textureRenderer = GetComponent<MeshRenderer>();
-        GenerateMap();
+        StartCoroutine(GenerateMap());
     }
 
     private void OnValidate()
@@ -120,32 +123,47 @@ public class MeshGenerator : MonoBehaviour
         if (lacunarity < 1) lacunarity = 1;
     }
 
-    public void GenerateMap()
+    public IEnumerator GenerateMap()
     {
         // Update heightMap
         heightMap = noise.ComputeHeightMap(mapWidth + 1, mapHeight + 1, seed, noiseScale, octaves, persistence,
-            lacunarity, offset, (int)noiseType + 1);
+            lacunarity, offset, (int) noiseType + 1);
         
-        // Set up Shared Buffers
-        // Pass map dimensions to shaders
-        int[] dim = {mapWidth, mapHeight};
-        ComputeBuffer dimension = new ComputeBuffer(2, 4);
-        dimension.SetData(dim);
-        meshGenShader.SetBuffer(0, Dimension, dimension);
-        erosionShader.SetBuffer(0, Dimension, dimension);
-        
-        // Set Shared variable
-        int numVertices = (mapWidth + 1) * (mapHeight + 1);
-        meshGenShader.SetInt(NumVertices, numVertices);
-        erosionShader.SetInt(NumVertices, numVertices);
+        try
+        {
+            // Set up Shared Buffers
+            // Pass map dimensions to shaders
+            int[] dim = {mapWidth, mapHeight};
+            dimension = new ComputeBuffer(2, 4);
+            dimension.SetData(dim);
+            meshGenShader.SetBuffer(0, Dimension, dimension);
+            erosionShader.SetBuffer(0, Dimension, dimension);
 
-        // Create Mesh and Erode
-        CreateMeshGPU();
-        ComputeErosion();
-        UpdateMesh();
-        
-        // Release Shared Buffer
-        dimension.Release();
+            // Set Shared variable
+            int numVertices = (mapWidth + 1) * (mapHeight + 1);
+            meshGenShader.SetInt(NumVertices, numVertices);
+            erosionShader.SetInt(NumVertices, numVertices);
+
+            // Create Mesh
+            CreateMeshGPU();
+
+            // Reapplying seed for somewhat consistent results
+            Random rng = new Random(seed);
+
+            // Erode
+            for (int i = 0; i < 300; i++)
+            {
+                ComputeErosion(rng);
+                UpdateMesh();
+                
+                yield return 0;
+            }
+        }
+        finally
+        {
+            // Release Shared Buffer
+            dimension?.Release();
+        }
     }
 
     void UpdateMesh()
@@ -306,10 +324,10 @@ public class MeshGenerator : MonoBehaviour
         //textureRenderer.sharedMaterial.mainTexture = texture;
     }
 
-    public void ComputeErosion()
+    public void ComputeErosion(Random rng)
     {
-        // Reapplying seed for somewhat consistent results
-        Random rng = new Random(seed);
+        // Buffer will throw error if this goes through
+        if (numRainDrops == 0) return;
         
         // Generate raindrop positions
         int[] rd = new int[numRainDrops];
@@ -492,6 +510,4 @@ public class MeshGenerator : MonoBehaviour
             position += velocity;
         }
     }
-
-
 }
