@@ -151,7 +151,7 @@ public class MeshGenerator : MonoBehaviour
             Random rng = new Random(seed);
 
             // Erode
-            for (int i = 0; i < 300; i++)
+            for (int i = 0; i < 1; i++)
             {
                 ComputeErosion(rng);
                 UpdateMesh();
@@ -334,7 +334,9 @@ public class MeshGenerator : MonoBehaviour
         int size = vertices.Length;
         for (int i = 0; i < numRainDrops; i++)
         {
-            rd[i] = rng.Next(0, size);
+            // prevent vertices on the right or bottom edges
+            rd[i] = rng.Next(0, size - mapWidth);
+            if (rd[i] % (mapWidth + 1) == mapWidth) i--;
         }
         
         // Manage Compute Buffers

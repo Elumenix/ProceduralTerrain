@@ -23,10 +23,10 @@ float3 GetGradientAndHeight(float2 pos)
     int index = col * (_Dimension[0] + 1) + row;
 
     // Get height of all vertices of square
-    float nw = _VertexBuffer[index].y;
-    float ne = _VertexBuffer[index + 1].y;
-    float sw = _VertexBuffer[index + (_Dimension[0] + 1)];
-    float se = _VertexBuffer[index + (_Dimension[0] + 1) + 1];
+    float nw = _VertexBuffer[index].y;                           // Top Left
+    float ne = _VertexBuffer[index + 1].y;                       // Top Right
+    float sw = _VertexBuffer[index + (_Dimension[0] + 1)].y;     // Bottom Left
+    float se = _VertexBuffer[index + (_Dimension[0] + 1) + 1].y; // Bottom Right
     
     // Get coordinates of drop in (square) face.
     // Top left is (0,0)
@@ -43,19 +43,27 @@ float3 GetGradientAndHeight(float2 pos)
 
 
 // Simulate a raindrop picking up and depositing sediment
-void SimulateDrop(uint v) 
+void SimulateDrop(uint vert) 
 {
     // Local drop variables
     // Position is on a grid between mapWidth + 1 and mapHeight + 1
-    float2 position = float2(float(v) % (_Dimension[0] + 1), float(v) / (_Dimension[0] + 1));
-    float2 velocity = float2(0.0f, 0.0f);
+    // It is guaranteed that the starting vertex won't be exactly on mapWidth + 1 or mapHeight + 1
+    float2 position = float2(float(vert) % (_Dimension[0] + 1), float(vert) / (_Dimension[0] + 1));
+    float velocity = .1f; // START VELOCITY VARIABLE?
     float2 dir = float2(0.0f, 0.0f);
     float volume = 1;
     float sediment = 0;
 
+    // These will be updated at the end of the loop
+    int row = (int)position.x;
+    int col = (int)position.y;
+    int step = 0;
+
     // Max Steps to ensure drop doesn't move endlessly
     // TODO: Perhaps find a way so that heightAndGradient aren't calculated twice
-    while (volume > 0)
+    int maxSteps = 30;
+    
+    while (step < maxSteps)
     {
         float3 g = GetGradientAndHeight(position);
         float2 gradient = float2(g.x, g.y);
@@ -64,51 +72,89 @@ void SimulateDrop(uint v)
         // Update flow direction based on gradient
         // Inertia determines how much gradient is taken into account
         dir = dir * inertia - gradient * (1 - inertia);
-        normalize(dir); // Drop moves fixed distance, so erosion is evenly distributed
+        dir = normalize(dir); // Drop moves fixed distance, so erosion is evenly distributed
 
         // Find next position
         float2 newPos = position + dir;
+
+        // Finished if drop goes off the map : vertices exactly on the right or bottom border should also be considered off
+        if (newPos.x < 0.0f || newPos.y < 0.0f || newPos.x >= (float)_Dimension[0] || newPos.y >= (float)_Dimension[1]) return;
+        
         float newHeight = GetGradientAndHeight(newPos).z;
+        float heightDif = newHeight - oldHeight;
 
-        // is drop ascending?
-        if (newHeight > oldHeight)
-        {
-            // Either completely fill pit at oldPos or deposit all sediment there
-            float fill = min(sediment, oldHeight - newHeight);
-            // TODO: doStuff
-        }
-        else // downHill
-        {
-            // Speed and size of the drop determine how much sediment it can hold
-            float minSlope = .03f;
-            float dropCapacity = max(oldHeight - newHeight, minSlope) * velocity * volume * maxSediment;
+        // Speed and size of the drop determine how much sediment it can hold
+        float minSlope = .03f;
+        float dropCapacity = max(-heightDif, minSlope) * velocity * volume * maxSediment;
 
-            // can the drop hold more sediment
-            if (sediment > dropCapacity)
+        
+        // is drop ascending or full
+        if (heightDif > 0 || sediment > dropCapacity)
+        {
+            float depositAmount;
+            
+
+            if (heightDif > 0) // Drop was ascending
             {
-                float depAmount = (sediment - dropCapacity) * depositionRate;
-                // subtract and put at old position
-                
+                // Either completely fill pit at oldPos or deposit all sediment there
+                depositAmount = min(sediment, heightDif);
             }
             else
             {
-                // Can't take more sediment than height difference
-                float depAmount = min((dropCapacity - sediment) * softness, oldHeight - newHeight);
+                // A percentage of the surplus sediment is dropped
+                depositAmount = (sediment - dropCapacity) * depositionRate;    
             }
+
+            // Get coordinates of drop in (square) face.
+            // Top left is (0,0)
+            float u = position.x - row;
+            float v = position.y - col;
+
+            // Remove the lost sediment from the drop
+            sediment -= depositAmount;
+            int index = col * (_Dimension[0] + 1) + row;
+            
+            // Add it to the vertices of the (square) face the drop is on
+            // Weight for each vertex is bilinearly interpolated based on drops position in the face
+            _VertexBuffer[index].y += depositAmount * (1-u) * (1-v);                     // Top Left
+            _VertexBuffer[index + 1].y += depositAmount * u * (1-v);                     // Top Right
+            _VertexBuffer[index + (_Dimension[0] + 1)].y += depositAmount * (1-u) * v;   // Bottom Left
+            _VertexBuffer[index + (_Dimension[0] + 1) + 1].y += depositAmount * u * v;   // Bottom Right
+        }
+        else // downhill and the drop can hold more sediment
+        {
+            // Amount of sediment to take won't be greater than the height difference
+            float erosionAmount = min((dropCapacity - sediment) * softness, -heightDif);
+
+            float u = position.x - row;
+            float v = position.y - col;
+
+            // Remove the lost sediment from the drop
+            sediment += erosionAmount;
+            int index = col * (_Dimension[0] + 1) + row;
+
+            // Add it to the vertices of the (square) face the drop is on
+            // Weight for each vertex is bilinearly interpolated based on drops position in the face
+            _VertexBuffer[index].y -= erosionAmount * (1-u) * (1-v);                     // Top Left
+            _VertexBuffer[index + 1].y -= erosionAmount * u * (1-v);                     // Top Right
+            _VertexBuffer[index + (_Dimension[0] + 1)].y -= erosionAmount * (1-u) * v;   // Bottom Left
+            _VertexBuffer[index + (_Dimension[0] + 1) + 1].y -= erosionAmount * u * v;   // Bottom Right
+            
         }
 
-        // Velocity is adjusted depending upon the slope and gravity
+        // Velocity is adjusted depending upon the slope and gravity, max prevents negative square root
         float gravity = 9.81f;
-        velocity = sqrt(pow(velocity,2) + (newHeight - oldHeight) * gravity);
+
+        // TODO: Experiment to figure out the correct way to handle heightDif being negative
+        velocity = sqrt(pow(velocity,2) + abs(heightDif) * gravity);
 
         // Update Position
         position = newPos;
         volume = volume * (1-evaporationRate);
 
-
-
-
-        
+        step++;
+        row = (int)position.x;
+        col = (int)position.y;
     }
 }
 
