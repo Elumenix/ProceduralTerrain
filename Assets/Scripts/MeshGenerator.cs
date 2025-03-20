@@ -69,7 +69,7 @@ public class MeshGenerator : MonoBehaviour
     public int numRainDrops;
     [Range(0, 1)]
     public float inertia = 1.0f;
-    [Range(0,1)]
+    [Range(0,32)]
     public float sedimentMax = .1f;
     [Range(0,1)]
     public float depositionRate = .25f;
@@ -77,6 +77,12 @@ public class MeshGenerator : MonoBehaviour
     public float evaporationRate = .2f;
     [Range(0,1)]
     public float softness = .1f;
+    [Range(0,10)] 
+    public float gravity;
+    [Range(1, 10)] 
+    public int radius;
+    [Range(0, 1)]
+    public float minSlope;
 
     #region StringSearchOptimization
     // String search optimization for material shader properties
@@ -100,6 +106,9 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int Softness = Shader.PropertyToID("softness");
     private static readonly int EvaporationRate = Shader.PropertyToID("evaporationRate");
     private static readonly int Inertia = Shader.PropertyToID("inertia");
+    private static readonly int Radius = Shader.PropertyToID("radius");
+    private static readonly int Gravity = Shader.PropertyToID("gravity");
+    private static readonly int MinSlope = Shader.PropertyToID("minSlope");
 
     #endregion
 
@@ -355,6 +364,9 @@ public class MeshGenerator : MonoBehaviour
         erosionShader.SetFloat(DepositionRate, depositionRate);
         erosionShader.SetFloat(EvaporationRate, evaporationRate);
         erosionShader.SetFloat(Softness, softness);
+        erosionShader.SetFloat(Gravity,gravity);
+        erosionShader.SetFloat(MinSlope, minSlope);
+        erosionShader.SetInt(Radius, radius - 1); // 0 would be normal square
         
         // Execute erosion shader
         erosionShader.Dispatch(0, Mathf.CeilToInt(numRainDrops / 1024f), 1, 1);
