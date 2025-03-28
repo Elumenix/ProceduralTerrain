@@ -105,7 +105,7 @@ void SimulateDrop(uint vert)
             else
             {
                 // A percentage of the surplus sediment is dropped
-                depositAmount = (sediment - dropCapacity) * depositionRate * volume;    
+                depositAmount = (sediment - dropCapacity) * depositionRate;    
             }
 
             // Get coordinates of drop in (square) face.
