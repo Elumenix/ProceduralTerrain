@@ -52,7 +52,8 @@ public class MeshGenerator : MonoBehaviour
     
     // Mesh information
     private Vector3[] vertices;
-    //private float[] altitudes;
+    private int[] heights;
+    private const int precision = 1000; // Precision to 3 decimal places
     private int[] indices;
     private Vector2[] uvs;
     private float[,] noiseMap;
@@ -62,7 +63,6 @@ public class MeshGenerator : MonoBehaviour
     public ComputeShader meshGenShader;
     public ComputeShader erosionShader;
     public ComputeBuffer dimension;
-
 
     
     // Erosion Variables
@@ -95,6 +95,7 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int HeightMap = Shader.PropertyToID("_HeightMap");
     private static readonly int UVBuffer = Shader.PropertyToID("_UVBuffer");
     private static readonly int VertexBuffer = Shader.PropertyToID("_VertexBuffer");
+    private static readonly int HeightBuffer = Shader.PropertyToID("_HeightBuffer");
     private static readonly int IndexBuffer = Shader.PropertyToID("_IndexBuffer");
     private static readonly int HeightMultiplier = Shader.PropertyToID("heightMultiplier");
     
@@ -109,6 +110,7 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int Radius = Shader.PropertyToID("radius");
     private static readonly int Gravity = Shader.PropertyToID("gravity");
     private static readonly int MinSlope = Shader.PropertyToID("minSlope");
+    private static readonly int Precision = Shader.PropertyToID("precision");
 
     #endregion
 
@@ -202,6 +204,7 @@ public class MeshGenerator : MonoBehaviour
         float heightScale = 1f / mapHeight;
         int size = (mapWidth + 1) * (mapHeight + 1);
         vertices = new Vector3[size];
+        heights = new int[size];
         uvs = new Vector2[size];
         indices = new int[mapWidth * mapHeight * 2 * 3]; // What's needed to draw the mesh
         int indexNum = 0;
@@ -215,6 +218,8 @@ public class MeshGenerator : MonoBehaviour
             {
                 vertices[num] = new Vector3(x * widthScale,
                     heightCurve.Evaluate(noiseMap[x,z]) * heightMultiplier, z * heightScale);
+                
+                heights[num] = (int) (vertices[num][1] * precision); // Get y value at set precision
                 
                 uvs[num] = new Vector2(x * widthScale, z * heightScale);
                 num++;
@@ -247,9 +252,9 @@ public class MeshGenerator : MonoBehaviour
         meshGenShader.SetBuffer(0, Scale, mapScale);
 
         // Pass precalculated heightmap to shader
-        ComputeBuffer heights = new ComputeBuffer(heightMap.Length, 4);
-        heights.SetData(heightMap);
-        meshGenShader.SetBuffer(0, HeightMap, heights);
+        ComputeBuffer mapHeights = new ComputeBuffer(heightMap.Length, 4);
+        mapHeights.SetData(heightMap);
+        meshGenShader.SetBuffer(0, HeightMap, mapHeights);
         
         // number of vertices/uvs
         int size = (mapWidth + 1) * (mapHeight + 1);
@@ -285,10 +290,17 @@ public class MeshGenerator : MonoBehaviour
         
         // Release Buffers
         mapScale.Release();
-        heights.Release();
+        mapHeights.Release();
         vertexBuffer.Release();
         uvBuffer.Release();
         indexBuffer.Release();
+
+        heights = new int[size];
+        for (int i = 0; i < size; i++)
+        {
+            // Capture vertex heights at intended precision so that they can be used in erosion and drawing
+            heights[i] = (int)(vertices[i][1] * precision);
+        }
     }
 
     // Eventually refactor the following to be used to change draw modes. Leverage altitude list for this
@@ -349,13 +361,13 @@ public class MeshGenerator : MonoBehaviour
         }
         
         // Manage Compute Buffers
-        ComputeBuffer terrainBuffer = new(size, 12);
-        terrainBuffer.SetData(vertices);
+        ComputeBuffer heightBuffer = new(size, 4);
+        heightBuffer.SetData(heights);
         ComputeBuffer rainDropBuffer = new(numRainDrops, 4);
         rainDropBuffer.SetData(rd);
         
         // Set Buffers
-        erosionShader.SetBuffer(0, VertexBuffer, terrainBuffer);
+        erosionShader.SetBuffer(0, HeightBuffer, heightBuffer);
         erosionShader.SetBuffer(0, RainDropBuffer, rainDropBuffer);
         
         // Set Variables
@@ -367,16 +379,23 @@ public class MeshGenerator : MonoBehaviour
         erosionShader.SetFloat(Gravity,gravity);
         erosionShader.SetFloat(MinSlope, minSlope);
         erosionShader.SetInt(Radius, radius - 1); // 0 would be normal square
+        erosionShader.SetInt(Precision, precision);
         
         // Execute erosion shader
         erosionShader.Dispatch(0, Mathf.CeilToInt(numRainDrops / 1024f), 1, 1);
         
-        // Copy new vertex data, will be used in update mesh
-        terrainBuffer.GetData(vertices);
+        // Copy height data
+        heightBuffer.GetData(heights);
         
         // Clean up
-        terrainBuffer.Release();
+        heightBuffer.Release();
         rainDropBuffer.Release();
+        
+        // Transfer height data to vertices so that the mesh displays properly
+        for (int i = 0; i < size; i++)
+        {
+            vertices[i].y = (float)heights[i] / precision;
+        }
     }
     
     

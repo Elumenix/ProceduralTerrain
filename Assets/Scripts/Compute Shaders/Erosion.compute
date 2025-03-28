@@ -3,13 +3,14 @@
 #define MAX_UINT 4294967295
 
 // Buffers
-RWStructuredBuffer<float3> _VertexBuffer;
+RWStructuredBuffer<int> _HeightBuffer; // float3 isn't used because they don't support atomic operations
 StructuredBuffer<int> _RainDropBuffer;
 StructuredBuffer<uint> _Dimension; // {mapWidth, mapHeight} Refers to number of faces, not vertices
 
 // Variables
 uint numVertices;
 uint radius;
+int precision;
 float inertia;
 float maxSediment;
 float depositionRate;
@@ -26,10 +27,10 @@ float3 GetGradientAndHeight(float2 pos)
     int index = col * (_Dimension[0] + 1) + row;
 
     // Get height of all vertices of square
-    float nw = _VertexBuffer[index].y;                           // Top Left
-    float ne = _VertexBuffer[index + 1].y;                       // Top Right
-    float sw = _VertexBuffer[index + (_Dimension[0] + 1)].y;     // Bottom Left
-    float se = _VertexBuffer[index + (_Dimension[0] + 1) + 1].y; // Bottom Right
+    float nw = (float)_HeightBuffer[index] / precision;                           // Top Left
+    float ne = (float)_HeightBuffer[index + 1] / precision;                       // Top Right
+    float sw = (float)_HeightBuffer[index + (_Dimension[0] + 1)] / precision;     // Bottom Left
+    float se = (float)_HeightBuffer[index + (_Dimension[0] + 1) + 1] / precision; // Bottom Right
     
     // Get coordinates of drop in (square) face.
     // Top left is (0,0)
@@ -64,9 +65,9 @@ void SimulateDrop(uint vert)
 
     // Max Steps to ensure drop doesn't move endlessly
     // TODO: Perhaps find a way so that heightAndGradient aren't calculated twice
-    int maxSteps = 100;
+    int maxSteps = 300;
     
-    while (volume > .001 /*step < maxSteps*/)
+    while (step < maxSteps)
     {
         float3 g = GetGradientAndHeight(position);
         float2 gradient = float2(g.x, g.y);
@@ -96,7 +97,6 @@ void SimulateDrop(uint vert)
         {
             float depositAmount;
             
-
             if (heightDif > 0) // Drop was ascending
             {
                 // Either completely fill pit at oldPos or deposit all sediment there
@@ -105,7 +105,7 @@ void SimulateDrop(uint vert)
             else
             {
                 // A percentage of the surplus sediment is dropped
-                depositAmount = (sediment - dropCapacity) * depositionRate;    
+                depositAmount = (sediment - dropCapacity) * depositionRate * volume;    
             }
 
             // Get coordinates of drop in (square) face.
@@ -119,18 +119,17 @@ void SimulateDrop(uint vert)
             
             // Add it to the vertices of the (square) face the drop is on
             // Weight for each vertex is bilinearly interpolated based on drops position in the face
-            _VertexBuffer[index].y += depositAmount * (1-u) * (1-v);                     // Top Left
-            _VertexBuffer[index + 1].y += depositAmount * u * (1-v);                     // Top Right
-            _VertexBuffer[index + (_Dimension[0] + 1)].y += depositAmount * (1-u) * v;   // Bottom Left
-            _VertexBuffer[index + (_Dimension[0] + 1) + 1].y += depositAmount * u * v;   // Bottom Right
+            InterlockedAdd(_HeightBuffer[index], (int)round(depositAmount * (1-u) * (1-v) * precision));                 // Top Left
+            InterlockedAdd(_HeightBuffer[index + 1], (int)round(depositAmount * u * (1-v) * precision));                 // Top Right
+            InterlockedAdd(_HeightBuffer[index + _Dimension[0] + 1], (int)round(depositAmount * (1-u) * v * precision)); // Bottom Left
+            InterlockedAdd(_HeightBuffer[index + _Dimension[0] + 2], (int)round(depositAmount * u * v * precision));     // Bottom Right
         }
         else // downhill and the drop can hold more sediment
         {
             // Amount of sediment to take won't be greater than the height difference
             float erosionAmount = min((dropCapacity - sediment) * softness, -heightDif);
-
-
-            // Remove the lost sediment from the drop
+            
+            // Add eroded sediment to the drop
             sediment += erosionAmount;
 
             int minR = max(0, (int)floor(position.x - radius));
@@ -169,24 +168,27 @@ void SimulateDrop(uint vert)
                     if (d <= (float)radius)
                     {
                         // Weight is normalized to be between 0 and 1 then that percentage is multiplied by the total amount eroded
-                        float weight = max(0, radius - length(float2(r, c) - position)) / norm;
-                        
+                        float weight = max(0, radius - length(float2(r, c) - position)) / norm; // norm will never be 0 as it's on the graph
+
+                        // Erode the terrain based on the weight this vertex should be eroded
+                        InterlockedAdd(_HeightBuffer[index], (int)round(-erosionAmount * weight * precision));
+
                         // Give a min distance terrain can fall so that drops don't pool at the edge of the terrain
                         // and creat deep and unfathomable pits that can cause errors
-                        _VertexBuffer[index].y = max(-2, _VertexBuffer[index].y - erosionAmount * weight);
+                        InterlockedMax(_HeightBuffer[index], -2 * precision); 
                     }
                 }
             }
         }
 
         // Velocity is adjusted depending upon the slope and gravity, max prevents negative square root
-        //velocity = sqrt(pow(velocity,2) + max(-heightDif,0) * gravity);
         velocity = sqrt(max(0.0f, velocity * velocity + -heightDif * gravity));
 
         // Update Position
         position = newPos;
         volume = volume * (1-evaporationRate);
 
+        // Update tracked variables
         step++;
         row = (int)position.x;
         col = (int)position.y;
