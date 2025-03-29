@@ -2,7 +2,7 @@
 #pragma kernel CSMain
 
 // Buffers
-StructuredBuffer<int> _Dimension; // {mapWidth, mapHeight}
+StructuredBuffer<int> _Dimension; // {mapWidth, mapHeight} Based on number of faces, not number of vertices
 StructuredBuffer<float> _Scale; // essentially a float 2
 StructuredBuffer<float> _HeightMap;
 RWStructuredBuffer<float3> _VertexBuffer;
@@ -24,8 +24,9 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     _VertexBuffer[id.x] = float3(x * _Scale[0], /*heightCurve.Evaluate(_HeightMap[id.x])*/ _HeightMap[id.x] * heightMultiplier,
         z * _Scale[1]);
 
-    _UVBuffer[id.x] = float2(x * _Scale[0], z * _Scale[1]);
-        
+    _UVBuffer[id.x] = float2(x * _Scale[0], z * _Scale[1]); // World space Uv's
+    //_UVBuffer[id.x] = float2(x / (float)_Dimension[0], z / (float)_Dimension[1]); //normalized Uv's
+    
     //colorMap[i] = Color.Lerp(Color.black, Color.white, heightMap[i]);
 
     // Cant form a square outside the bounds of the map
@@ -44,5 +45,4 @@ void CSMain (uint3 id : SV_DispatchThreadID)
         _IndexBuffer[indexNum + 4] = id.x + _Dimension[0] + 1;
         _IndexBuffer[indexNum + 5] = id.x + _Dimension[0] + 2;
     }
-    
 }

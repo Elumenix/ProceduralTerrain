@@ -83,5 +83,5 @@ float simplex(float2 v)
     g.x = a0.x * x0.x + h.x * x0.y;
     g.y = a0.y * x1.x + h.y * x1.y;
     g.z = a0.z * x2.x + h.z * x2.y;
-    return (130.0 * dot(m, g)) * 0.5 + 0.5;
+    return 130.0 * dot(m, g);
 }

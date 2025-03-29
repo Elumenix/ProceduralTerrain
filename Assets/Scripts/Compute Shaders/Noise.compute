@@ -6,19 +6,22 @@
 
 // Buffers
 StructuredBuffer<float2> _OffsetBuffer;
-StructuredBuffer<float> _MidPoint; // To make scale happen from the center. It's a float2
-RWStructuredBuffer<int> _RangeValues; // For normalization. It's a float2
-RWStructuredBuffer<float> _HeightMapBuffer;
+StructuredBuffer<float2> _MidPoint; // To make scale happen from the center.
+RWStructuredBuffer<int> _RangeValues; // For normalization. {min, max}
+RWStructuredBuffer<float> _HeightMapBuffer; // Everything is set to 0 before this runs
 
 // Global Variables
 uint noiseType;
 uint numVertices;
 uint mapWidth;
 uint octaves;
-uint normalPrecision;
+int normalPrecision;
 float scaleFactor;
 float persistence;
 float lacunarity;
+
+float warpStrength = 50.0f;
+float warpFrequency = 1.0f;
 
 [numthreads(64,1,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
@@ -27,8 +30,8 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     if (id.x >= numVertices) return;
 
     // What vertex this point represents; Starts from center instead of corner
-    float x = (float)(id.x % mapWidth) - _MidPoint[0];
-    float y = (float)(id.x / mapWidth) - _MidPoint[1];
+    float x = (float)(id.x % mapWidth) - _MidPoint[0].x;
+    float y = (float)(id.x / mapWidth) - _MidPoint[0].y;
 
     // Starting values
     float frequency = 1;
@@ -39,15 +42,18 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     {
         // Pick a new position to sample from each octave
         float2 newPos = (pos - _OffsetBuffer[i]) * frequency;
+        float2 warp = float2(simplex(newPos * warpFrequency), simplex(newPos * warpFrequency +float2(1000,1000))) * warpStrength;
+        newPos += warp; // Perturb the sampling position. Fixes artifacts in non-simplex noise for higher scaleFactors
 
-        // Add a scaled value between -1 and 1 using specified noise type
+        // Add a scaled value based on amplitude.
+        // Range of returned values is insignificant because they will be normalized later
         if (noiseType == 1)
         {
-            _HeightMapBuffer[id.x] += (perlin(newPos) * 2 - 1) * amplitude;
+            _HeightMapBuffer[id.x] += perlin(newPos) * amplitude;
         }
         else if (noiseType == 2)
         {
-            _HeightMapBuffer[id.x] += (simplex(newPos) * 2 - 1) * amplitude;
+            _HeightMapBuffer[id.x] += simplex(newPos) * amplitude;
         }
         else // if (noiseType == 3)
         {
@@ -61,8 +67,8 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     }
 
     // The following operation only works on int or uint variables, so I need to convert my floats
-    // Multiplying by 1000 helps me confirm the number of significant digits to round by
-    int value = _HeightMapBuffer[id.x] * normalPrecision;
+    // Multiplying by precision helps me confirm the number of significant digits to round by
+    int value = (int)round(_HeightMapBuffer[id.x] * normalPrecision);
     
     // Atomically set min and max in the buffer
     InterlockedMin(_RangeValues[0], value);

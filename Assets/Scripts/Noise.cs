@@ -1,3 +1,4 @@
+using System;
 using Unity.Mathematics;
 using UnityEngine;
 
@@ -31,7 +32,7 @@ public class Noise : MonoBehaviour
         // Set seed so this will be consistent
         rng = new System.Random(seed);
         int mapLength = mapWidth * mapHeight;
-        int normalPrecision = 1000 * octaves;
+        int normalPrecision = 1000;
         
         // Establish offsets for each point
         float2[] offsets = new float2[octaves];
@@ -44,15 +45,15 @@ public class Noise : MonoBehaviour
         noiseShader.SetBuffer(0, OffsetBuffer, offsetBuffer);
         
         // For normalization
-        int[] ends = {normalPrecision, -normalPrecision};
+        int[] ends = {Int32.MaxValue, Int32.MinValue};
         ComputeBuffer normalization = new ComputeBuffer(2, 4);
         normalization.SetData(ends);
         noiseShader.SetBuffer(0, RangeValues, normalization);
         
         
         // For midpoint scaling
-        float[] midPoint = {mapWidth / 2.0f, mapHeight / 2.0f};
-        ComputeBuffer mid = new ComputeBuffer(2, 4);
+        float2[] midPoint = {new float2(mapWidth / 2.0f, mapHeight / 2.0f)};
+        ComputeBuffer mid = new ComputeBuffer(1, 8);
         mid.SetData(midPoint);
         noiseShader.SetBuffer(0, MidPoint, mid);
         

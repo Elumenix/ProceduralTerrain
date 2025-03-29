@@ -1,7 +1,5 @@
-using System;
 using System.Collections;
-using System.Collections.Generic;
-using Unity.Mathematics;
+using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.Rendering;
 using Random = System.Random;
@@ -52,6 +50,7 @@ public class MeshGenerator : MonoBehaviour
     
     // Mesh information
     private Vector3[] vertices;
+    private Vector3[] normals;
     private int[] heights;
     private const int precision = 1000; // Precision to 3 decimal places
     private int[] indices;
@@ -62,10 +61,12 @@ public class MeshGenerator : MonoBehaviour
     // Compute Shader Data
     public ComputeShader meshGenShader;
     public ComputeShader erosionShader;
+    public ComputeShader normalShader;
     public ComputeBuffer dimension;
 
     
     // Erosion Variables
+    public bool skipErosion = false;
     public int numRainDrops;
     [Range(0, .999f)]
     public float inertia = .999f;
@@ -98,6 +99,7 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int HeightBuffer = Shader.PropertyToID("_HeightBuffer");
     private static readonly int IndexBuffer = Shader.PropertyToID("_IndexBuffer");
     private static readonly int HeightMultiplier = Shader.PropertyToID("heightMultiplier");
+    private static readonly int NormalBuffer = Shader.PropertyToID("_NormalBuffer");
     
     // String search optimization for Erosion
     private static readonly int NumVertices = Shader.PropertyToID("numVertices"); 
@@ -149,11 +151,14 @@ public class MeshGenerator : MonoBehaviour
             dimension.SetData(dim);
             meshGenShader.SetBuffer(0, Dimension, dimension);
             erosionShader.SetBuffer(0, Dimension, dimension);
+            normalShader.SetBuffer(0, Dimension, dimension);
+
 
             // Set Shared variable
             int numVertices = (mapWidth + 1) * (mapHeight + 1);
             meshGenShader.SetInt(NumVertices, numVertices);
             erosionShader.SetInt(NumVertices, numVertices);
+            normalShader.SetInt(NumVertices, numVertices);
 
             // Create Mesh
             CreateMeshGPU();
@@ -165,8 +170,8 @@ public class MeshGenerator : MonoBehaviour
             for (int i = 0; i < 1; i++)
             {
                 ComputeErosion(rng);
+                RecalculateNormals();
                 UpdateMesh();
-                
                 yield return 0;
             }
         }
@@ -177,14 +182,41 @@ public class MeshGenerator : MonoBehaviour
         }
     }
 
-    void UpdateMesh()
+    // The only reason this would be called is if GenerateMap was stopped early
+    void RecalculateNormals()
+    {
+        // Now that all vertices are in their final positions, we want to calculate the normals of the mesh ourselves
+        // This is because unity's innate RecalculateMeshNormals() isn't tuned for the sometimes steep slopes of 
+        // terrain and causes visible artifacts. It's also likely faster to iterate over large meshes on the gpu.
+        ComputeBuffer vertexBuffer = new ComputeBuffer(vertices.Length, 12);
+        vertexBuffer.SetData(vertices);
+        ComputeBuffer normalBuffer = new ComputeBuffer(vertices.Length, 12);
+        normals = new Vector3[vertices.Length];
+        normalBuffer.SetData(normals);
+        
+        normalShader.SetBuffer(0, VertexBuffer, vertexBuffer);
+        normalShader.SetBuffer(0, NormalBuffer, normalBuffer);
+            
+        // Dispatch normalShader
+        normalShader.Dispatch(0, Mathf.CeilToInt(vertices.Length / 1024.0f), 1, 1);
+            
+        // Save normals
+        normalBuffer.GetData(normals);
+            
+        // Clean up for normalShader
+        vertexBuffer.Release();
+        normalBuffer.Release();
+    }
+
+    public void UpdateMesh()
     {
         mesh.Clear();
         mesh.indexFormat = IndexFormat.UInt32; // Allows larger meshes
         mesh.vertices = vertices;
         mesh.triangles = indices;
         mesh.uv = uvs;
-        mesh.RecalculateNormals(); // Fixes Lighting
+        //mesh.RecalculateNormals(); // Fixes Lighting
+        mesh.normals = normals;
         
         // Update Materials
         textureRenderer.sharedMaterial.SetFloat(MinHeight, 0);
@@ -347,8 +379,8 @@ public class MeshGenerator : MonoBehaviour
 
     public void ComputeErosion(Random rng)
     {
-        // Buffer will throw error if this goes through
-        if (numRainDrops == 0) return;
+        // Buffer will throw error if size 0 
+        if (numRainDrops == 0 || skipErosion) return;
         
         // Generate raindrop positions
         int[] rd = new int[numRainDrops];
