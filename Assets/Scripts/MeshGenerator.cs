@@ -38,6 +38,10 @@ public class MeshGenerator : MonoBehaviour
     public float persistence;
     [Range(1,3)]
     public float lacunarity;
+    [Range(0,10)]
+    public float warpStrength;
+    [Range(0,5)]
+    public float warpFrequency;
     public int seed;
     public Vector2 offset;
     //public TerrainType[] regions;
@@ -140,7 +144,7 @@ public class MeshGenerator : MonoBehaviour
     {
         // Update heightMap
         heightMap = noise.ComputeHeightMap(mapWidth + 1, mapHeight + 1, seed, noiseScale, octaves, persistence,
-            lacunarity, offset, (int) noiseType + 1);
+            lacunarity, offset, (int) noiseType + 1, warpStrength, warpFrequency);
         
         try
         {

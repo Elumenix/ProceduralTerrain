@@ -19,9 +19,8 @@ int normalPrecision;
 float scaleFactor;
 float persistence;
 float lacunarity;
-
-float warpStrength = 50.0f;
-float warpFrequency = 1.0f;
+float warpStrength; 
+float warpFrequency;
 
 [numthreads(64,1,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
@@ -38,12 +37,47 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     float amplitude = 1;
     float2 pos = float2(x, y) / scaleFactor; // How zoomed in
     
+
+    // warp offset is calculated, the main goal of this is to slightly offset where we're sampling from
+    // this helps to avoid artifacts in the terrain when the scale is too large. This is especially true for perlin noise.
+    float2 warp = float2(0, 0);
+    if (warpFrequency != 0) // Early out
+    {
+        // DisplacementScale makes it so that strength doesn't directly affect the final vertical offset
+        // regardless of where the warpFrequency (it was just a vertical offset value when freq was 0)
+        float displacementScale = warpStrength * warpFrequency;
+        float2 warpNoisePos = pos * warpFrequency;
+    
+        // Offset noise samples for x/y to avoid diagonal patterns
+        if (noiseType == 1)
+        {
+            warp = displacementScale * float2(
+                perlin(warpNoisePos),                     // dx
+                perlin(warpNoisePos + float2(100, 100)) // dy (offset seed)
+            );
+        }
+        else if (noiseType == 2)
+        {
+            warp = displacementScale * float2(
+                simplex(warpNoisePos),                     // dx
+                simplex(warpNoisePos + float2(100, 100)) // dy (offset seed)
+            );
+        }
+        else
+        {
+            warp = displacementScale * float2(
+                worley(warpNoisePos),                     // dx
+                worley(warpNoisePos + float2(100, 100)) // dy (offset seed)
+            );
+        }
+    }
+    
+    pos += warp;
+    
     for (uint i = 0; i < octaves; i++)
     {
         // Pick a new position to sample from each octave
         float2 newPos = (pos - _OffsetBuffer[i]) * frequency;
-        float2 warp = float2(simplex(newPos * warpFrequency), simplex(newPos * warpFrequency +float2(1000,1000))) * warpStrength;
-        newPos += warp; // Perturb the sampling position. Fixes artifacts in non-simplex noise for higher scaleFactors
 
         // Add a scaled value based on amplitude.
         // Range of returned values is insignificant because they will be normalized later

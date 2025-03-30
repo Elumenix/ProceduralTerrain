@@ -23,11 +23,13 @@ public class Noise : MonoBehaviour
     private static readonly int NumVertices = Shader.PropertyToID("numVertices");
     private static readonly int MidPoint = Shader.PropertyToID("_MidPoint");
     private static readonly int NoiseType = Shader.PropertyToID("noiseType");
+    private static readonly int WarpStrength = Shader.PropertyToID("warpStrength");
+    private static readonly int WarpFrequency = Shader.PropertyToID("warpFrequency");
 
 
     // Version of this function where we offload work to the gpu
     public float[] ComputeHeightMap(int mapWidth, int mapHeight, int seed, float scale, int octaves,
-        float persistence, float lacunarity, Vector2 offset, int noiseType)
+        float persistence, float lacunarity, Vector2 offset, int noiseType, float warpStrength, float warpFreq)
     {
         // Set seed so this will be consistent
         rng = new System.Random(seed);
@@ -74,6 +76,8 @@ public class Noise : MonoBehaviour
         noiseShader.SetFloat(Persistence, persistence);
         noiseShader.SetFloat(Lacunarity, lacunarity);
         noiseShader.SetInt(NoiseType, noiseType);
+        noiseShader.SetFloat(WarpStrength, warpStrength);
+        noiseShader.SetFloat(WarpFrequency, warpFreq);
         
         
         // Dispatch
