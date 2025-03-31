@@ -22,9 +22,9 @@ float minSlope;
 float3 GetGradientAndHeight(float2 pos)
 {
     // Get row/column of top left index of (square) face
-    int row = (int)pos.x;
-    int col = (int)pos.y;
-    int index = col * (_Dimension[0] + 1) + row;
+    int col = (int)pos.x;
+    int row = (int)pos.y;
+    int index = row * (_Dimension[0] + 1) + col;
 
     // Get height of all vertices of square
     float nw = (float)_HeightBuffer[index] / precision;                           // Top Left
@@ -34,8 +34,8 @@ float3 GetGradientAndHeight(float2 pos)
     
     // Get coordinates of drop in (square) face.
     // Top left is (0,0)
-    float u = pos.x - row;
-    float v = pos.y - col;
+    float u = pos.x - col;
+    float v = pos.y - row;
 
     // Bilinear Interpolation of heights to get gradient direction and height
     float angleX = (ne - nw) * (1-v) + (se - sw) * v;
@@ -49,19 +49,21 @@ float3 GetGradientAndHeight(float2 pos)
 // Simulate a raindrop picking up and depositing sediment
 void SimulateDrop(uint vert) 
 {
+    // These will be updated at the end of the loop
+    int col = vert % (_Dimension[0] + 1);
+    int row = vert / (_Dimension[0] + 1);
+    int step = 0;
+    
     // Local drop variables
     // Position is on a grid between mapWidth + 1 and mapHeight + 1
-    // It is guaranteed that the starting vertex won't be exactly on mapWidth + 1 or mapHeight + 1
-    float2 position = float2(float(vert) % (_Dimension[0] + 1), float(vert) / (_Dimension[0] + 1));
+    // Raindrop will always start directly in the middle of a face, and at least 0.5 away from the edge of the world
+    float2 position = float2(col + 0.5f, row + 0.5f);
     float velocity = 1.0f; // START VELOCITY VARIABLE?
     float2 dir = float2(0.0f, 0.0f);
     float volume = 1;
     float sediment = 0;
 
-    // These will be updated at the end of the loop
-    int row = (int)position.x;
-    int col = (int)position.y;
-    int step = 0;
+    
 
     // Max Steps to ensure drop doesn't move endlessly
     // TODO: Perhaps find a way so that heightAndGradient aren't calculated twice
@@ -110,12 +112,12 @@ void SimulateDrop(uint vert)
 
             // Get coordinates of drop in (square) face.
             // Top left is (0,0)
-            float u = position.x - row;
-            float v = position.y - col;
+            float u = position.x - col;
+            float v = position.y - row;
 
             // Remove the lost sediment from the drop
             sediment -= depositAmount;
-            int index = col * (_Dimension[0] + 1) + row;
+            int index = row * (_Dimension[0] + 1) + col;
             
             // Add it to the vertices of the (square) face the drop is on
             // Weight for each vertex is bilinearly interpolated based on drops position in the face
@@ -132,50 +134,47 @@ void SimulateDrop(uint vert)
             // Add eroded sediment to the drop
             sediment += erosionAmount;
 
-            int minR = max(0, (int)floor(position.x - radius));
-            int maxR = min(_Dimension[0], (int)ceil(position.x + radius));
-            int minC = max(0, (int)floor(position.y - radius));
-            int maxC = min(_Dimension[1], (int)ceil(position.y + radius));
+            int minC = max(0, (int)floor(position.x - radius));
+            int maxC = min(_Dimension[0], (int)ceil(position.x + radius));
+            int minR = max(0, (int)floor(position.y - radius));
+            int maxR = min(_Dimension[1], (int)ceil(position.y + radius));
 
             float norm = 0;
             int r,c;
             float2 vertexPos;
             float d;
             // First pass, which finds the normalization factor
-            for (r = minR; r < maxR; r++)
+            for (r = minR; r <= maxR; r++)
             {
-                for (c = minC; c < maxC; c++)
+                for (c = minC; c <= maxC; c++)
                 {
-                    vertexPos = float2(r, c);
+                    vertexPos = float2(c, r);
                     d = length(position - vertexPos);
 
                     if (d <= (float)radius)
                     {
-                        norm += radius - length(float2(r, c) - position);
+                        norm += radius - d;
                     }
                 }
             }
 
             // Second pass actually lowers terrain based on erosionAmount and weight of points
-            for (r = minR; r < maxR; r++)
+            for (r = minR; r <= maxR; r++)
             {
-                for (c = minC; c < maxC; c++)
+                for (c = minC; c <= maxC; c++)
                 {
-                    int index = c * (_Dimension[0] + 1) + r;
-                    vertexPos = float2(r, c);
+                    int index = r * (_Dimension[0] + 1) + c;
+                    vertexPos = float2(c, r);
                     d = length(position - vertexPos);
 
                     if (d <= (float)radius)
                     {
                         // Weight is normalized to be between 0 and 1 then that percentage is multiplied by the total amount eroded
-                        float weight = max(0, radius - length(float2(r, c) - position)) / norm; // norm will never be 0 as it's on the graph
+                        float weight = max(0, radius - d) / (norm + 1e-5f); 
 
                         // Erode the terrain based on the weight this vertex should be eroded
                         InterlockedAdd(_HeightBuffer[index], (int)round(-erosionAmount * weight * precision));
-
-                        // Give a min distance terrain can fall so that drops don't pool at the edge of the terrain
-                        // and creat deep and unfathomable pits that can cause errors
-                        InterlockedMax(_HeightBuffer[index], -2 * precision); 
+                        InterlockedMax(_HeightBuffer[index], -2 * precision);
                     }
                 }
             }
@@ -186,12 +185,12 @@ void SimulateDrop(uint vert)
 
         // Update Position
         position = newPos;
-        volume = volume * (1-evaporationRate);
+        volume *= (1-evaporationRate);
 
         // Update tracked variables
         step++;
-        row = (int)position.x;
-        col = (int)position.y;
+        col = (int)position.x;
+        row = (int)position.y;
     }
 }
 
