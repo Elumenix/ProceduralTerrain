@@ -68,9 +68,14 @@ void SimulateDrop(uint vert)
     // Max Steps to ensure drop doesn't move endlessly
     // TODO: Perhaps find a way so that heightAndGradient aren't calculated twice
     int maxSteps = 300;
-    
+
+    //  COULD BE FOR LOOP IF ONLY USING STEPS, MAY BE MORE EFFICIENT
     while (step < maxSteps)
     {
+        // Get location variables
+        col = (int)position.x;
+        row = (int)position.y;
+        
         float3 g = GetGradientAndHeight(position);
         float2 gradient = float2(g.x, g.y);
         float oldHeight = g.z;
@@ -84,15 +89,17 @@ void SimulateDrop(uint vert)
         // Find next position
         float2 newPos = position + dir;
 
-        // Finished if drop goes off the map : vertices exactly on the right or bottom border should also be considered off
+        // COULD EXCLUDE BORDERS HERE IF NECESSARY
+        // Finished if the drop goes off the map : vertices exactly on the right or bottom border should also be considered off
         if (newPos.x < 0.0f || newPos.y < 0.0f || newPos.x >= (float)_Dimension[0] || newPos.y >= (float)_Dimension[1]) return;
         
         float newHeight = GetGradientAndHeight(newPos).z;
         float heightDif = newHeight - oldHeight;
 
+        // I DON'T KNOW WHICH OF THESE IS RIGHT
         // Speed and size of the drop determine how much sediment it can hold
-        float dropCapacity = max(-heightDif, minSlope) * velocity * volume * maxSediment;
-
+        //float dropCapacity = max(-heightDif, minSlope) * velocity * volume * maxSediment;
+        float dropCapacity = max(-heightDif * velocity * volume * maxSediment, minSlope);
         
         // is drop ascending or full
         if (heightDif > 0 || sediment > dropCapacity)
@@ -110,13 +117,13 @@ void SimulateDrop(uint vert)
                 depositAmount = (sediment - dropCapacity) * depositionRate;    
             }
 
+            // Remove the lost sediment from the drop
+            sediment -= depositAmount;
+
             // Get coordinates of drop in (square) face.
             // Top left is (0,0)
             float u = position.x - col;
             float v = position.y - row;
-
-            // Remove the lost sediment from the drop
-            sediment -= depositAmount;
             int index = row * (_Dimension[0] + 1) + col;
             
             // Add it to the vertices of the (square) face the drop is on
@@ -130,9 +137,6 @@ void SimulateDrop(uint vert)
         {
             // Amount of sediment to take won't be greater than the height difference
             float erosionAmount = min((dropCapacity - sediment) * softness, -heightDif);
-            
-            // Add eroded sediment to the drop
-            sediment += erosionAmount;
 
             int minC = max(0, (int)floor(position.x - radius));
             int maxC = min(_Dimension[0], (int)ceil(position.x + radius));
@@ -170,27 +174,29 @@ void SimulateDrop(uint vert)
                     if (d <= (float)radius)
                     {
                         // Weight is normalized to be between 0 and 1 then that percentage is multiplied by the total amount eroded
-                        float weight = max(0, radius - d) / (norm + 1e-5f); 
+                        float weight = max(0, radius - d) / (norm + 1e-5f);
+
+                        // Make sure that terrain won't erode past the bottom of the map
+                        float remainingHeight = (float)_HeightBuffer[index] / precision;
+                        float delta = min(erosionAmount * weight, remainingHeight);
+                        sediment += delta;
 
                         // Erode the terrain based on the weight this vertex should be eroded
-                        InterlockedAdd(_HeightBuffer[index], (int)round(-erosionAmount * weight * precision));
-                        InterlockedMax(_HeightBuffer[index], -2 * precision);
+                        InterlockedAdd(_HeightBuffer[index], (int)round(-delta * precision));
                     }
                 }
             }
         }
 
         // Velocity is adjusted depending upon the slope and gravity, max prevents negative square root
-        velocity = sqrt(max(0.0f, velocity * velocity + -heightDif * gravity));
+        velocity = sqrt(max(0.0f, velocity * velocity + heightDif * -gravity));
 
         // Update Position
         position = newPos;
-        volume *= (1-evaporationRate);
+        volume *= 1-evaporationRate;
 
         // Update tracked variables
         step++;
-        col = (int)position.x;
-        row = (int)position.y;
     }
 }
 

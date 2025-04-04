@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using Unity.Mathematics;
 using Unity.VisualScripting;
 using UnityEngine;
@@ -58,7 +59,7 @@ public class MeshGenerator : MonoBehaviour
     private Vector3[] vertices;
     private Vector3[] normals;
     private int[] heights;
-    private const int precision = 1000; // Precision to 3 decimal places
+    private const int precision = 100000; // Precision to 3 decimal places
     private int[] indices;
     private Vector2[] uvs;
     private float[,] noiseMap;
@@ -80,7 +81,7 @@ public class MeshGenerator : MonoBehaviour
     public float sedimentMax = .1f;
     [Range(0,1)]
     public float depositionRate = .25f;
-    [Range(.005f, .05f)] 
+    [Range(0, 0.01f)] 
     public float evaporationRate = .2f;
     [Range(0,1)]
     public float softness = .1f;
@@ -88,7 +89,7 @@ public class MeshGenerator : MonoBehaviour
     public float gravity;
     [Range(1, 10)] 
     public int radius;
-    [Range(0, 1)]
+    [Range(0, 0.1f)]
     public float minSlope;
 
     #region StringSearchOptimization
@@ -388,6 +389,7 @@ public class MeshGenerator : MonoBehaviour
         // Buffer will throw error if size 0 
         if (numRainDrops == 0 || skipErosion) return;
         
+        
         // Generate raindrop positions
         int[] rd = new int[numRainDrops];
         int size = vertices.Length;
@@ -428,7 +430,7 @@ public class MeshGenerator : MonoBehaviour
         erosionShader.SetFloat(MinSlope, minSlope);
         erosionShader.SetInt(Radius, radius - 1); // 0 would be normal square
         erosionShader.SetInt(Precision, precision);
-        
+
         // Execute erosion shader
         erosionShader.Dispatch(0, Mathf.CeilToInt(numRainDrops / 1024f), 1, 1);
         
