@@ -141,6 +141,7 @@ public class MeshGenerator : MonoBehaviour
         if (heightMultiplier < 0) heightMultiplier = 0;
         if (noiseScale <= 0) noiseScale = 0.0011f;
         if (lacunarity < 1) lacunarity = 1;
+        mapHeight = mapWidth;
     }
 
     public IEnumerator GenerateMap()
@@ -428,7 +429,7 @@ public class MeshGenerator : MonoBehaviour
         erosionShader.SetFloat(Softness, softness);
         erosionShader.SetFloat(Gravity,gravity);
         erosionShader.SetFloat(MinSlope, minSlope);
-        erosionShader.SetInt(Radius, radius - 1); // 0 would be normal square
+        erosionShader.SetInt(Radius, radius); // 0 would be normal square
         erosionShader.SetInt(Precision, precision);
 
         // Execute erosion shader

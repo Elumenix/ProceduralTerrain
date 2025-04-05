@@ -96,10 +96,8 @@ void SimulateDrop(uint vert)
         float newHeight = GetGradientAndHeight(newPos).z;
         float heightDif = newHeight - oldHeight;
 
-        // I DON'T KNOW WHICH OF THESE IS RIGHT
         // Speed and size of the drop determine how much sediment it can hold
-        //float dropCapacity = max(-heightDif, minSlope) * velocity * volume * maxSediment;
-        float dropCapacity = max(-heightDif * velocity * volume * maxSediment, minSlope);
+        float dropCapacity = max(-heightDif, minSlope) * velocity * volume * maxSediment;
         
         // is drop ascending or full
         if (heightDif > 0 || sediment > dropCapacity)
@@ -137,11 +135,12 @@ void SimulateDrop(uint vert)
         {
             // Amount of sediment to take won't be greater than the height difference
             float erosionAmount = min((dropCapacity - sediment) * softness, -heightDif);
+            sediment += erosionAmount;
 
-            int minC = max(0, (int)floor(position.x - radius));
-            int maxC = min(_Dimension[0], (int)ceil(position.x + radius));
-            int minR = max(0, (int)floor(position.y - radius));
-            int maxR = min(_Dimension[1], (int)ceil(position.y + radius));
+            int minC = (int)floor(position.x - radius);
+            int maxC = (int)ceil(position.x + radius);
+            int minR = (int)floor(position.y - radius);
+            int maxR = (int)ceil(position.y + radius);
 
             float norm = 0;
             int r,c;
@@ -162,6 +161,11 @@ void SimulateDrop(uint vert)
                 }
             }
 
+            minC = max(0, (int)floor(position.x - radius));
+            maxC = min(_Dimension[0], (int)ceil(position.x + radius));
+            minR = max(0, (int)floor(position.y - radius));
+            maxR = min(_Dimension[1], (int)ceil(position.y + radius));
+
             // Second pass actually lowers terrain based on erosionAmount and weight of points
             for (r = minR; r <= maxR; r++)
             {
@@ -174,12 +178,12 @@ void SimulateDrop(uint vert)
                     if (d <= (float)radius)
                     {
                         // Weight is normalized to be between 0 and 1 then that percentage is multiplied by the total amount eroded
-                        float weight = max(0, radius - d) / (norm + 1e-5f);
+                        // Because drop is on the map, vertices will be within the radius, so norm is never 0
+                        float weight = max(0, radius - d) / norm;
 
                         // Make sure that terrain won't erode past the bottom of the map
                         float remainingHeight = (float)_HeightBuffer[index] / precision;
-                        float delta = min(erosionAmount * weight, remainingHeight);
-                        sediment += delta;
+                        float delta = min(erosionAmount * weight, remainingHeight + 2);
 
                         // Erode the terrain based on the weight this vertex should be eroded
                         InterlockedAdd(_HeightBuffer[index], (int)round(-delta * precision));

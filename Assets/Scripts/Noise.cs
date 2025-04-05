@@ -34,7 +34,7 @@ public class Noise : MonoBehaviour
         // Set seed so this will be consistent
         rng = new System.Random(seed);
         int mapLength = mapWidth * mapHeight;
-        int normalPrecision = 1000;
+        int normalPrecision = 10000;
         
         // Establish offsets for each point
         float2[] offsets = new float2[octaves];
@@ -62,7 +62,7 @@ public class Noise : MonoBehaviour
         
         // Set Actual heightMap to buffer
         float[] map = new float[mapLength];
-        ComputeBuffer heightMap = new ComputeBuffer(mapWidth * mapHeight, 4);
+        ComputeBuffer heightMap = new ComputeBuffer(mapLength, 4);
         heightMap.SetData(map);
         noiseShader.SetBuffer(0, HeightMapBuffer, heightMap);
         
@@ -72,7 +72,7 @@ public class Noise : MonoBehaviour
         noiseShader.SetInt(MapWidth, mapWidth);
         noiseShader.SetInt(Octaves, octaves);
         noiseShader.SetInt(NormalPrecision, normalPrecision);
-        noiseShader.SetFloat(ScaleFactor, scale);
+        noiseShader.SetFloat(ScaleFactor, scale / 10);
         noiseShader.SetFloat(Persistence, persistence);
         noiseShader.SetFloat(Lacunarity, lacunarity);
         noiseShader.SetInt(NoiseType, noiseType);

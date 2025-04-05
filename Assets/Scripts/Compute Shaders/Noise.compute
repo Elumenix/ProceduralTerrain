@@ -31,11 +31,11 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     // What vertex this point represents; Starts from center instead of corner
     float x = (float)(id.x % mapWidth) - _MidPoint[0].x;
     float y = (float)(id.x / mapWidth) - _MidPoint[0].y;
+    float2 pos = (float2(x, y) / mapWidth) / scaleFactor; // How zoomed in
 
     // Starting values
     float frequency = 1;
     float amplitude = 1;
-    float2 pos = float2(x, y) / scaleFactor; // How zoomed in
     
 
     // warp offset is calculated, the main goal of this is to slightly offset where we're sampling from
