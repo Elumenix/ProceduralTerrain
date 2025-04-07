@@ -45,6 +45,8 @@ public class MeshGenerator : MonoBehaviour
     public float warpStrength;
     [Range(0,5)]
     public float warpFrequency;
+    [Range(0,5)]
+    public int smoothingPasses;
     public int seed;
     public Vector2 offset;
     //public TerrainType[] regions;
@@ -81,7 +83,7 @@ public class MeshGenerator : MonoBehaviour
     public float sedimentMax = .1f;
     [Range(0,1)]
     public float depositionRate = .25f;
-    [Range(0, 0.01f)] 
+    [Range(0, .3f)] 
     public float evaporationRate = .2f;
     [Range(0,1)]
     public float softness = .1f;
@@ -148,7 +150,7 @@ public class MeshGenerator : MonoBehaviour
     {
         // Update heightMap
         heightMap = noise.ComputeHeightMap(mapWidth + 1, mapHeight + 1, seed, noiseScale, octaves, persistence,
-            lacunarity, offset, (int) noiseType + 1, warpStrength, warpFrequency);
+            lacunarity, offset, (int) noiseType + 1, warpStrength, warpFrequency, smoothingPasses);
         
         try
         {

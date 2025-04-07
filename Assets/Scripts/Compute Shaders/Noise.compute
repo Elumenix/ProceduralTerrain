@@ -31,7 +31,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     // What vertex this point represents; Starts from center instead of corner
     float x = (float)(id.x % mapWidth) - _MidPoint[0].x;
     float y = (float)(id.x / mapWidth) - _MidPoint[0].y;
-    float2 pos = (float2(x, y) / mapWidth) / scaleFactor; // How zoomed in
+    float2 pos = float2(x, y) / scaleFactor; // How zoomed in
 
     // Starting values
     float frequency = 1;

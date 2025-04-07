@@ -1,0 +1,38 @@
+#pragma kernel CSMain
+
+RWStructuredBuffer<float> _SmoothedHeightMap;
+StructuredBuffer<float> _OriginalHeightMap;
+uint mapWidth;
+uint mapHeight;
+
+[numthreads(8,8,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= mapWidth || id.y >= mapHeight)
+        return;
+
+    int x = id.x;
+    int y = id.y;
+    int index = y * mapWidth + x;
+
+    float sum = 0.0f;
+    int count = 0;
+
+    // 5x5 neighborhood
+    for (int dy = -2; dy <= 2; dy++)
+    {
+        for (int dx = -2; dx <= 2; dx++)
+        {
+            int nx = x + dx;
+            int ny = y + dy;
+
+            if (nx >= 0 && (uint)nx < mapWidth && ny >= 0 && (uint)ny < mapHeight)
+            {
+                sum += _OriginalHeightMap[ny * mapWidth + nx];
+                count++;
+            }
+        }
+    }
+
+    _SmoothedHeightMap[index] = sum / count;
+}

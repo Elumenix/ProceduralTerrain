@@ -67,7 +67,7 @@ void SimulateDrop(uint vert)
 
     // Max Steps to ensure drop doesn't move endlessly
     // TODO: Perhaps find a way so that heightAndGradient aren't calculated twice
-    int maxSteps = 300;
+    int maxSteps = 64;
 
     //  COULD BE FOR LOOP IF ONLY USING STEPS, MAY BE MORE EFFICIENT
     while (step < maxSteps)
