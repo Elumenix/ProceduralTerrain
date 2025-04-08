@@ -13,7 +13,7 @@ RWStructuredBuffer<uint> _IndexBuffer;
 uint numVertices;
 float heightMultiplier;
 
-[numthreads(1024,1,1)]
+[numthreads(64,1,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= numVertices) return; // Don't need to iterate on

@@ -2,6 +2,10 @@
 #pragma kernel CSMain
 #define MAX_UINT 4294967295
 
+// The following code makes two assumptions
+// 1. This code is Single Execution (Not runtime code, or running every frame)
+// 2. The terrain is infinite, rather than being an island or suddenly stopping at the edge of the map
+
 // Buffers
 RWStructuredBuffer<int> _HeightBuffer; // float3 isn't used because they don't support atomic operations
 StructuredBuffer<int> _RainDropBuffer;
@@ -21,9 +25,10 @@ float minSlope;
 
 float3 GetGradientAndHeight(float2 pos)
 {
+    // Position clamping to a valid edge implies there is terrain outside the edge of the map that is a same height
     // Get row/column of top left index of (square) face
-    int col = (int)pos.x;
-    int row = (int)pos.y;
+    int col = (int)clamp(pos.x, 0, _Dimension[0] - .01f);
+    int row = (int)clamp(pos.y, 0, _Dimension[1] - .01f);
     int index = row * (_Dimension[0] + 1) + col;
 
     // Get height of all vertices of square
@@ -72,27 +77,26 @@ void SimulateDrop(uint vert)
     //  COULD BE FOR LOOP IF ONLY USING STEPS, MAY BE MORE EFFICIENT
     while (step < maxSteps)
     {
+        // COULD EXCLUDE BORDERS HERE IF NECESSARY
+        // We shouldn't continue if the starting position of the drop for this step is already off the map
+        // Drops exactly on the right or bottom border should also be considered off because the gradient would consider them at an out-of-bounds cell
+        if (position.x < 0.0f || position.y < 0.0f || position.x >= (float)_Dimension[0] || position.y >= (float)_Dimension[1]) return;
+        
         // Get location variables
         col = (int)position.x;
         row = (int)position.y;
-        
         float3 g = GetGradientAndHeight(position);
         float2 gradient = float2(g.x, g.y);
         float oldHeight = g.z;
 
         // Update flow direction based on gradient
-        // Inertia determines how much gradient is taken into account
+        // Inertia determines how much gradient(terrain directed angle) is taken into account
         dir = dir * inertia - gradient * (1 - inertia);
-        if (length(dir) == 0) return; // drop is no longer moving
-        dir = normalize(dir); // Drop moves fixed distance, so erosion is evenly distributed
+        if (length(dir) == 0) return; // drop is no longer moving, stop early
+        dir = normalize(dir) * .5f; // Drop moves fixed distance of .5f, so erosion is evenly distributed
 
         // Find next position
         float2 newPos = position + dir;
-
-        // COULD EXCLUDE BORDERS HERE IF NECESSARY
-        // Finished if the drop goes off the map : vertices exactly on the right or bottom border should also be considered off
-        if (newPos.x < 0.0f || newPos.y < 0.0f || newPos.x >= (float)_Dimension[0] || newPos.y >= (float)_Dimension[1]) return;
-        
         float newHeight = GetGradientAndHeight(newPos).z;
         float heightDif = newHeight - oldHeight;
 
@@ -126,17 +130,19 @@ void SimulateDrop(uint vert)
             
             // Add it to the vertices of the (square) face the drop is on
             // Weight for each vertex is bilinearly interpolated based on drops position in the face
-            InterlockedAdd(_HeightBuffer[index], (int)round(depositAmount * (1-u) * (1-v) * precision));                 // Top Left
-            InterlockedAdd(_HeightBuffer[index + 1], (int)round(depositAmount * u * (1-v) * precision));                 // Top Right
-            InterlockedAdd(_HeightBuffer[index + _Dimension[0] + 1], (int)round(depositAmount * (1-u) * v * precision)); // Bottom Left
-            InterlockedAdd(_HeightBuffer[index + _Dimension[0] + 2], (int)round(depositAmount * u * v * precision));     // Bottom Right
+            InterlockedMax(_HeightBuffer[index], _HeightBuffer[index] + (int)round(depositAmount * (1-u) * (1-v) * precision));                                     // Top Left
+            InterlockedMax(_HeightBuffer[index + 1], _HeightBuffer[index + 1] + (int)round(depositAmount * u * (1-v) * precision));                                 // Top Right
+            InterlockedMax(_HeightBuffer[index + _Dimension[0] + 1], _HeightBuffer[index + _Dimension[0] + 1] + (int)round(depositAmount * (1-u) * v * precision)); // Bottom Left
+            InterlockedMax(_HeightBuffer[index + _Dimension[0] + 2], _HeightBuffer[index + _Dimension[0] + 2] + (int)round(depositAmount * u * v * precision));     // Bottom Right
         }
         else // downhill and the drop can hold more sediment
         {
             // Amount of sediment to take won't be greater than the height difference
             float erosionAmount = min((dropCapacity - sediment) * softness, -heightDif);
-            sediment += erosionAmount;
+            sediment += erosionAmount; // We take full amount as we can't track info for out-of-bounds vertices
 
+            // We initially include invalid vertices so that weighting isn't heavy on ones inside the map
+            // This should help give the illusion that the terrain continues outside the map
             int minC = (int)floor(position.x - radius);
             int maxC = (int)ceil(position.x + radius);
             int minR = (int)floor(position.y - radius);
@@ -146,6 +152,8 @@ void SimulateDrop(uint vert)
             int r,c;
             float2 vertexPos;
             float d;
+            float fRadius = (float)radius;
+            
             // First pass, which finds the normalization factor
             for (r = minR; r <= maxR; r++)
             {
@@ -154,17 +162,18 @@ void SimulateDrop(uint vert)
                     vertexPos = float2(c, r);
                     d = length(position - vertexPos);
 
-                    if (d <= (float)radius)
+                    if (d <= fRadius)
                     {
                         norm += radius - d;
                     }
                 }
             }
 
-            minC = max(0, (int)floor(position.x - radius));
-            maxC = min(_Dimension[0], (int)ceil(position.x + radius));
-            minR = max(0, (int)floor(position.y - radius));
-            maxR = min(_Dimension[1], (int)ceil(position.y + radius));
+            // We're now only checking valid vertices
+            minC = max(0, minC);
+            maxC = min(_Dimension[0], maxC);
+            minR = max(0, minR);
+            maxR = min(_Dimension[1], maxR);
 
             // Second pass actually lowers terrain based on erosionAmount and weight of points
             for (r = minR; r <= maxR; r++)
@@ -175,18 +184,19 @@ void SimulateDrop(uint vert)
                     vertexPos = float2(c, r);
                     d = length(position - vertexPos);
 
-                    if (d <= (float)radius)
+                    if (d <= fRadius)
                     {
                         // Weight is normalized to be between 0 and 1 then that percentage is multiplied by the total amount eroded
                         // Because drop is on the map, vertices will be within the radius, so norm is never 0
-                        float weight = max(0, radius - d) / norm;
+                        float weight = max(0, fRadius - d) / norm;
 
                         // Make sure that terrain won't erode past the bottom of the map
-                        float remainingHeight = (float)_HeightBuffer[index] / precision;
-                        float delta = min(erosionAmount * weight, remainingHeight + 2);
+                        // The following code is combined in the Interlocked Add to minimize race conditions between calculations
+                        //float remainingHeight = (float)_HeightBuffer[index] / precision;
+                        float delta = min(erosionAmount * weight, (float)_HeightBuffer[index] / precision);
 
-                        // Erode the terrain based on the weight this vertex should be eroded
-                        InterlockedAdd(_HeightBuffer[index], (int)round(-delta * precision));
+                        // Erode the terrain by the proper amount. Min is used instead of add to prevent race condition anomalies
+                        InterlockedMin(_HeightBuffer[index], _HeightBuffer[index] - (int)round(delta * precision));
                     }
                 }
             }
@@ -205,7 +215,7 @@ void SimulateDrop(uint vert)
 }
 
 
-[numthreads(1024,1,1)]
+[numthreads(64,1,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= numVertices) return; // Don't need to iterate on

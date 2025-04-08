@@ -107,38 +107,39 @@ public class Noise : MonoBehaviour
         {
             heightMap.GetData(map);
         }
-
-
-        ComputeBuffer resultBuffer = new ComputeBuffer(mapLength, 4);
-        for (int i = 0; i < smoothingPasses; i++)
+        else
         {
-            // Set input/output buffers and parameters
-            smoothShader.SetBuffer(0, OriginalHeightMap, heightMap);
-            smoothShader.SetBuffer(0, SmoothedHeightMap, resultBuffer);
-            smoothShader.SetInt(MapWidth, mapWidth);
-            smoothShader.SetInt(MapHeight, mapHeight);
-
-            // Dispatch the compute shader
-            smoothShader.Dispatch(0, Mathf.CeilToInt(mapWidth / 8f), Mathf.CeilToInt(mapHeight / 8f), 1);
-            
-            // Swap the buffers for the next pass
-            if (i != smoothingPasses - 1)
+            ComputeBuffer resultBuffer = new ComputeBuffer(mapLength, 4);
+            for (int i = 0; i < smoothingPasses; i++)
             {
-                // Used deconstruction to swap
-                (heightMap, resultBuffer) = (resultBuffer, heightMap);
-            }
-        }
-        
-        resultBuffer.GetData(map);
+                // Set input/output buffers and parameters
+                smoothShader.SetBuffer(0, OriginalHeightMap, heightMap);
+                smoothShader.SetBuffer(0, SmoothedHeightMap, resultBuffer);
+                smoothShader.SetInt(MapWidth, mapWidth);
+                smoothShader.SetInt(MapHeight, mapHeight);
 
-        
+                // Dispatch the compute shader
+                smoothShader.Dispatch(0, Mathf.CeilToInt(mapWidth / 8f), Mathf.CeilToInt(mapHeight / 8f), 1);
+
+                // Swap the buffers for the next pass
+                if (i != smoothingPasses - 1)
+                {
+                    // Used deconstruction to swap
+                    (heightMap, resultBuffer) = (resultBuffer, heightMap);
+                }
+            }
+
+            resultBuffer.GetData(map);
+            resultBuffer.Release();
+        }
+
+
         // Release Buffers
         offsetBuffer.Release();
         intRangeBuffer.Release();
         floatRangeBuffer.Release();
         heightMap.Release();
         mid.Release();
-        resultBuffer.Release();
 
         
         return map;

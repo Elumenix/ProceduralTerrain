@@ -6,7 +6,7 @@ StructuredBuffer<float3> _VertexBuffer;
 RWStructuredBuffer<float3> _NormalBuffer;
 uint numVertices;
 
-[numthreads(1024,1,1)]
+[numthreads(64,1,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= numVertices) return;

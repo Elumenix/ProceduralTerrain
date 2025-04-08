@@ -208,7 +208,7 @@ public class MeshGenerator : MonoBehaviour
         normalShader.SetBuffer(0, NormalBuffer, normalBuffer);
             
         // Dispatch normalShader
-        normalShader.Dispatch(0, Mathf.CeilToInt(vertices.Length / 1024.0f), 1, 1);
+        normalShader.Dispatch(0, Mathf.CeilToInt(vertices.Length / 64.0f), 1, 1);
             
         // Save normals
         normalBuffer.GetData(normals);
@@ -323,7 +323,7 @@ public class MeshGenerator : MonoBehaviour
         meshGenShader.SetFloat(HeightMultiplier, heightMultiplier);
         
         // Dispatch Shader
-        meshGenShader.Dispatch(0, Mathf.CeilToInt(size / 1024.0f), 1, 1);
+        meshGenShader.Dispatch(0, Mathf.CeilToInt(size / 64.0f), 1, 1);
 
         // Retrieve data: UpdateMesh() will use these values
         vertexBuffer.GetData(vertices);
@@ -408,7 +408,7 @@ public class MeshGenerator : MonoBehaviour
             }
             /*else
             {
-                SimulateDrop((uint)rd[i]);
+                SimulateDrop(rd[i]);
             }*/
         }
         
@@ -435,7 +435,7 @@ public class MeshGenerator : MonoBehaviour
         erosionShader.SetInt(Precision, precision);
 
         // Execute erosion shader
-        erosionShader.Dispatch(0, Mathf.CeilToInt(numRainDrops / 1024f), 1, 1);
+        erosionShader.Dispatch(0, Mathf.CeilToInt(numRainDrops / 64.0f), 1, 1);
         
         // Copy height data
         heightBuffer.GetData(heights);
@@ -448,189 +448,6 @@ public class MeshGenerator : MonoBehaviour
         for (int i = 0; i < size; i++)
         {
             vertices[i].y = (float)heights[i] / precision;
-        }
-    }
-    
-    
-    
-    
-    float3 GetGradientAndHeight(float2 pos)
-    {
-        // Get row/column of top left index of (square) face
-        int col = (int)pos.x;
-        int row = (int)pos.y;
-        int index = row * (mapWidth + 1) + col;
-
-        // Get height of all vertices of square
-        float nw = (float)heights[index] / precision;                           // Top Left
-        float ne = (float)heights[index + 1] / precision;                       // Top Right
-        float sw = (float)heights[index + (mapWidth + 1)] / precision;     // Bottom Left
-        float se = (float)heights[index + (mapWidth + 1) + 1] / precision; // Bottom Right
-        
-        // Get coordinates of drop in (square) face.
-        // Top left is (0,0)
-        float u = pos.x - col;
-        float v = pos.y - row;
-
-        // Bilinear Interpolation of heights to get gradient direction and height
-        float angleX = (ne - nw) * (1-v) + (se - sw) * v;
-        float angleY = (sw - nw) * (1-u) + (se - ne) * u;
-        float height = nw * (1-u) * (1-v) + ne * u * (1-v) + sw * (1-u) * v + se * u * v;
-
-        return new float3(angleX, angleY, height);
-    }
-
-
-    // Simulate a raindrop picking up and depositing sediment
-    void SimulateDrop(uint vert) 
-    {
-        
-        // These will be updated at the end of the loop
-        int col = (int) (vert % (mapWidth + 1));
-        int row = (int) (vert / (mapWidth + 1));
-        int step = 0;
-    
-        // Local drop variables
-        // Position is on a grid between mapWidth + 1 and mapHeight + 1
-        // Raindrop will always start directly in the middle of a face, and at least 0.5 away from the edge of the world
-        float2 position = new float2(col + 0.5f, row + 0.5f);
-        float velocity = 1.0f; // START VELOCITY VARIABLE?
-        float2 dir = new float2(0.0f, 0.0f);
-        float volume = 1;
-        float sediment = 0;
-
-        // Max Steps to ensure drop doesn't move endlessly
-        // TODO: Perhaps find a way so that heightAndGradient aren't calculated twice
-        int maxSteps = 300;
-        
-        while (step < maxSteps)
-        {
-            float3 g = GetGradientAndHeight(position);
-            float2 gradient = new float2(g.x, g.y);
-            float oldHeight = g.z;
-
-            // Update flow direction based on gradient
-            // Inertia determines how much gradient is taken into account
-            dir = dir * inertia - gradient * (1 - inertia);
-            if (Vector3.Magnitude(new Vector3(dir.x, 0, dir.y)) == 0) return; // drop is no longer moving
-            Vector3 convert = Vector3.Normalize(new Vector3(dir.x, 0, dir.y));;
-            dir = new float2(convert.x, convert.z); // Drop moves fixed distance, so erosion is evenly distributed
-
-            // Find next position
-            float2 newPos = position + dir;
-
-            // Finished if drop goes off the map : vertices exactly on the right or bottom border should also be considered off
-            if (newPos.x < 0.0f || newPos.y < 0.0f || newPos.x >= (float)mapWidth || newPos.y >= (float)mapHeight) return;
-            
-            float newHeight = GetGradientAndHeight(newPos).z;
-            float heightDif = newHeight - oldHeight;
-
-            // Speed and size of the drop determine how much sediment it can hold
-            float dropCapacity = Mathf.Max(-heightDif, minSlope) * velocity * volume * sedimentMax;
-
-            
-            // is drop ascending or full
-            if (heightDif > 0 || sediment > dropCapacity)
-            {
-                float depositAmount;
-                
-                if (heightDif > 0) // Drop was ascending
-                {
-                    // Either completely fill pit at oldPos or deposit all sediment there
-                    depositAmount = Mathf.Min(sediment, heightDif);
-                }
-                else
-                {
-                    // A percentage of the surplus sediment is dropped
-                    depositAmount = (sediment - dropCapacity) * depositionRate;    
-                }
-
-                // Get coordinates of drop in (square) face.
-                // Top left is (0,0)
-                float u = position.x - col;
-                float v = position.y - row;
-
-                // Remove the lost sediment from the drop
-                sediment -= depositAmount;
-                int index = row * (mapWidth + 1) + col;
-                
-                // Add it to the vertices of the (square) face the drop is on
-                // Weight for each vertex is bilinearly interpolated based on drops position in the face
-                heights[index] += (int)Mathf.Round(depositAmount * (1-u) * (1-v) * precision);                 // Top Left
-                heights[index + 1] += (int)Mathf.Round(depositAmount * u * (1-v) * precision);                 // Top Right
-                heights[index + mapWidth + 1] += (int)Mathf.Round(depositAmount * (1-u) * v * precision); // Bottom Left
-                heights[index + mapWidth + 2] += (int)Mathf.Round(depositAmount * u * v * precision);     // Bottom Right
-            }
-            else // downhill and the drop can hold more sediment
-            {
-                // Amount of sediment to take won't be greater than the height difference
-                float erosionAmount = Mathf.Min((dropCapacity - sediment) * softness, -heightDif);
-                
-                // Add eroded sediment to the drop
-                sediment += erosionAmount;
-
-                int minR = Mathf.Max(0, (int)Mathf.Floor(position.y - radius));
-                int maxR = Mathf.Min(mapHeight, (int)Mathf.Ceil(position.y + radius));
-                int minC = Mathf.Max(0, (int)Mathf.Floor(position.x - radius));
-                int maxC = Mathf.Min(mapWidth, (int)Mathf.Ceil(position.x + radius));
-
-                float norm = 0;
-                int r,c;
-                float2 vertexPos;
-                float d;
-                // First pass, which finds the normalization factor
-                for (r = minR; r <= maxR; r++)
-                {
-                    for (c = minC; c <= maxC; c++)
-                    {
-                        vertexPos = new float2(c, r);
-                        vertexPos = position - vertexPos;
-                        d = Vector3.Magnitude(new Vector3(vertexPos.x, 0, vertexPos.y));
-
-                        if (d <= (float)radius)
-                        {
-                            norm += radius - d;
-                        }
-                    }
-                }
-
-                // Second pass actually lowers terrain based on erosionAmount and weight of points
-                for (r = minR; r <= maxR; r++)
-                {
-                    for (c = minC; c <= maxC; c++)
-                    {
-                        int index = r * (mapWidth + 1) + c;
-                        vertexPos = new float2(c, r);
-                        vertexPos = position - vertexPos;
-                        d = Vector3.Magnitude(new Vector3(vertexPos.x, 0, vertexPos.y));
-
-                        if (d <= (float)radius)
-                        {
-                            // Weight is normalized to be between 0 and 1 then that percentage is multiplied by the total amount eroded
-                            float weight = Mathf.Max(0, radius - d) / (norm + 1e-5f); 
-
-                            // Erode the terrain based on the weight this vertex should be eroded
-                            heights[index] = Math.Max(heights[index], (int)Mathf.Round(-erosionAmount * weight * precision));
-
-                            // Give a min distance terrain can fall so that drops don't pool at the edge of the terrain
-                            // and creat deep and unfathomable pits that can cause errors
-                            heights[index] = Math.Max(heights[index], -2 * precision); 
-                        }
-                    }
-                }
-            }
-
-            // Velocity is adjusted depending upon the slope and gravity, max prevents negative square root
-            velocity = Mathf.Sqrt(Mathf.Max(0.0f, velocity * velocity + -heightDif * gravity));
-
-            // Update Position
-            position = newPos;
-            volume *= (1-evaporationRate);
-
-            // Update tracked variables
-            step++;
-            col = (int)position.x;
-            row = (int)position.y;
         }
     }
 }
