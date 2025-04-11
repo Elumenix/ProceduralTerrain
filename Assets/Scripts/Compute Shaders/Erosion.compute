@@ -139,6 +139,17 @@ void SimulateDrop(uint vert)
         {
             // Amount of sediment to take won't be greater than the height difference
             float erosionAmount = min((dropCapacity - sediment) * softness, -heightDif);
+
+            // Reduce erosion based on how close we are to the map edge, starting at a radius length away
+            // The point of this is to prevent massive ravines forming at the edge of the map as a result of drop pooling
+            float edgeX = min(position.x, _Dimension[0] - position.x);
+            float edgeY = min(position.y, _Dimension[1] - position.y);
+            float edgeDistance = min(edgeX, edgeY);
+            float edgeThreshold = radius;
+            float edgeFactor = clamp(edgeDistance / edgeThreshold, 0.0f, 1.0f);
+            erosionAmount *= edgeFactor;
+
+            
             sediment += erosionAmount; // We take full amount as we can't track info for out-of-bounds vertices
 
             // We initially include invalid vertices so that weighting isn't heavy on ones inside the map
