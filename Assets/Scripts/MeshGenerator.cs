@@ -5,8 +5,8 @@ using Unity.Mathematics;
 using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.UI;
 using Random = System.Random;
-// ReSharper disable ArrangeObjectCreationWhenTypeEvident
 
 [ExecuteInEditMode]
 [RequireComponent(typeof(MeshFilter))]
@@ -125,6 +125,8 @@ public class MeshGenerator : MonoBehaviour
 
     #endregion
 
+    public List<Slider> sliders;
+
     void Start()
     {
         Camera.main!.depthTextureMode = DepthTextureMode.Depth;
@@ -132,9 +134,16 @@ public class MeshGenerator : MonoBehaviour
         mesh = new Mesh();
         GetComponent<MeshFilter>().mesh = mesh;
         textureRenderer = GetComponent<MeshRenderer>();
-        StartCoroutine(GenerateMap());
+        
+        // Hook up sliders to variables
+        sliders[0].onValueChanged.AddListener(val => { mapWidth = (int)val; mapHeight = (int) val; GenerateMap(); });
+        sliders[1].onValueChanged.AddListener(val => { noiseType = (NoiseType)((int)val); GenerateMap(); });
+        
+        
+        GenerateMap();
     }
-
+    
+    // This is mainly for testing in edit mode, It shouldn't be called at runtime
     private void OnValidate()
     {
         Camera.main!.depthTextureMode = DepthTextureMode.Depth;
@@ -143,10 +152,9 @@ public class MeshGenerator : MonoBehaviour
         if (heightMultiplier < 0) heightMultiplier = 0;
         if (noiseScale <= 0) noiseScale = 0.0011f;
         if (lacunarity < 1) lacunarity = 1;
-        mapHeight = mapWidth;
     }
 
-    public IEnumerator GenerateMap()
+    public void GenerateMap()
     {
         // Update heightMap
         heightMap = noise.ComputeHeightMap(mapWidth + 1, mapHeight + 1, seed, noiseScale, octaves, persistence,
@@ -177,13 +185,10 @@ public class MeshGenerator : MonoBehaviour
             Random rng = new Random(seed);
 
             // Erode
-            for (int i = 0; i < 1; i++)
-            {
-                ComputeErosion(rng);
-                RecalculateNormals();
-                UpdateMesh();
-                yield return 0;
-            }
+            ComputeErosion(rng);
+            RecalculateNormals();
+            UpdateMesh();
+
         }
         finally
         {

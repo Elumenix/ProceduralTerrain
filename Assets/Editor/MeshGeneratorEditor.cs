@@ -13,9 +13,9 @@ namespace Editor
             // Automatically redraws if something in the inspector is changed
             if (DrawDefaultInspector())
             {
-                meshGen.StopAllCoroutines();
+                //meshGen.StopAllCoroutines();
                 meshGen.dimension?.Release(); // Prevent Leak
-                meshGen.StartCoroutine(meshGen.GenerateMap());
+                meshGen.GenerateMap();
             }
 
             /*if (GUILayout.Button("Erode"))
@@ -25,7 +25,7 @@ namespace Editor
             
             if (GUILayout.Button("Reset"))
             {
-                meshGen.StartCoroutine(meshGen.GenerateMap());
+                meshGen.GenerateMap();
             }
         }
     }
