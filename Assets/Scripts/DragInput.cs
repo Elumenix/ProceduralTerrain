@@ -10,6 +10,7 @@ public class DragInput : TMP_InputField
 {
     private float delta;
     private MeshGenerator meshGen;
+    private bool isWrapping;
 
     protected override void Awake()
     {
@@ -20,27 +21,31 @@ public class DragInput : TMP_InputField
     private void UpdateDelta()
     {
         if (delta == 0) return;
-        float newValue;
         
         // Decimal should be smaller increments than integer
         if (contentType == ContentType.DecimalNumber)
         {
-            newValue = float.Parse(text) + delta / 1000;
+            text = (float.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture) + delta / 1000).ToString("F3", CultureInfo.InvariantCulture);
         }
         else
         {
-            newValue = int.Parse(text) + delta;
+            text = (int.Parse(text) + delta).ToString(CultureInfo.InvariantCulture);
         }
-
-        text = newValue.ToString(CultureInfo.CurrentUICulture);
-        delta = 0;
-
+        
         // The proper update statement will be called by an event afterward to update the appropriate value
+        delta = 0;
     }
     
     // overriding to keep track of how much the mouse moved rather than just highlighting
     public override void OnDrag(PointerEventData eventData)
     {
+        // Skip a frame if we just wrapped to prevent a large jump
+        if (isWrapping)
+        {
+            isWrapping = false;
+            return;
+        }
+        
         delta = eventData.delta.x;
         
         // The following code lets the mouse wrap the screen while the player is dragging
@@ -49,12 +54,12 @@ public class DragInput : TMP_InputField
         if (finalPosition <= 0)
         {
             Mouse.current.WarpCursorPosition(new Vector2(Screen.width + finalPosition, mousePosition.y));
-            delta -= Screen.width;
+            isWrapping = true;
         }
         else if (finalPosition > Screen.width)
         {
             Mouse.current.WarpCursorPosition(new Vector2(finalPosition - Screen.width, mousePosition.y));
-            delta += Screen.width;
+            isWrapping = true;
         }
         
         // This will trigger an event call to update targeted values
