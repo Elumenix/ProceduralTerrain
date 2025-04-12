@@ -135,10 +135,17 @@ public class MeshGenerator : MonoBehaviour
         GetComponent<MeshFilter>().mesh = mesh;
         textureRenderer = GetComponent<MeshRenderer>();
         
-        // Hook up sliders to variables
+        // Hook up sliders to variables, I'm using inline functions because these are really simple and repetitive
         sliders[0].onValueChanged.AddListener(val => { mapWidth = (int)val; mapHeight = (int) val; GenerateMap(); });
         sliders[1].onValueChanged.AddListener(val => { noiseType = (NoiseType)((int)val); GenerateMap(); });
-        
+        sliders[2].onValueChanged.AddListener(val => { noiseScale = val / 10.0f; GenerateMap(); });
+        sliders[3].onValueChanged.AddListener(val => { heightMultiplier = val; GenerateMap(); });
+        sliders[4].onValueChanged.AddListener(val => { octaves = (int)val; GenerateMap(); });
+        sliders[5].onValueChanged.AddListener(val => { persistence = val; GenerateMap(); });
+        sliders[6].onValueChanged.AddListener(val => { lacunarity = val; GenerateMap(); });
+        sliders[7].onValueChanged.AddListener(val => { warpStrength = val; GenerateMap(); });
+        sliders[8].onValueChanged.AddListener(val => { warpFrequency = val; GenerateMap(); });
+        sliders[9].onValueChanged.AddListener(val => { smoothingPasses = (int)val; GenerateMap(); });
         
         GenerateMap();
     }
