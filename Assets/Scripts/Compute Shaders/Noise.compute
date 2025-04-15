@@ -4,10 +4,16 @@
 #include "PerlinNoise.hlsl"
 #include "WorleyNoise.hlsl"
 
+// Struct makes sure data aligns correctly
+struct OffsetData
+{
+    float2 offset;
+};
+
 // Buffers
-StructuredBuffer<float2> _OffsetBuffer;
+StructuredBuffer<OffsetData> _OffsetBuffer;
 StructuredBuffer<float2> _MidPoint; // To make scale happen from the center.
-RWStructuredBuffer<int> _RangeValues; // For normalization. {min, max}
+RWStructuredBuffer<int> _RangeValues : register(u1); // For normalization. {min, max}
 RWStructuredBuffer<float> _HeightMapBuffer; // Everything is set to 0 before this runs
 
 // Global Variables
@@ -77,7 +83,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     for (uint i = 0; i < octaves; i++)
     {
         // Pick a new position to sample from each octave
-        float2 newPos = (pos - _OffsetBuffer[i]) * frequency;
+        float2 newPos = (pos - _OffsetBuffer[i].offset) * frequency;
 
         // Add a scaled value based on amplitude.
         // Range of returned values is insignificant because they will be normalized later
@@ -103,8 +109,8 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     // The following operation only works on int or uint variables, so I need to convert my floats
     // Multiplying by precision helps me confirm the number of significant digits to round by
     int value = (int)round(_HeightMapBuffer[id.x] * normalPrecision);
-    
+
     // Atomically set min and max in the buffer
-    InterlockedMin(_RangeValues[0], value);
-    InterlockedMax(_RangeValues[1], value);
+    _RangeValues[0] = min(_RangeValues[0], value);
+    _RangeValues[1] = max(_RangeValues[1], value);
 }

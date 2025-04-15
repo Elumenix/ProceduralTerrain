@@ -1,12 +1,12 @@
 using System;
-using System.Linq;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Rendering;
+using Random = UnityEngine.Random;
 
 public class Noise : MonoBehaviour
 {
-    static System.Random rng;
+    //static System.Random rng;
     static float minHeight;
     static float maxHeight;
     public ComputeShader noiseShader;
@@ -38,7 +38,7 @@ public class Noise : MonoBehaviour
         float persistence, float lacunarity, Vector2 offset, int noiseType, float warpStrength, float warpFreq, int smoothingPasses, Action<float[]> callback)
     {
         // Set seed so this will be consistent
-        rng = new System.Random(seed);
+        Random.InitState(seed);
         int mapLength = mapWidth * mapHeight;
         int normalPrecision = 10000;
 
@@ -46,7 +46,7 @@ public class Noise : MonoBehaviour
         float2[] offsets = new float2[octaves];
         for (int i = 0; i < octaves; i++)
         {
-            offsets[i] = new float2(rng.Next(-100000, 100000) + offset.x, rng.Next(-100000, 100000) + offset.y);
+            offsets[i] = new float2(Random.Range(-100000, 100000) + offset.x, Random.Range(-100000, 100000) + offset.y);
         }
 
         ComputeBuffer offsetBuffer = new(octaves, 8);
@@ -96,7 +96,7 @@ public class Noise : MonoBehaviour
         {
             if (request.hasError)
             {
-                Debug.Log("intRangeBuffer failed.");
+                Debug.LogError("intRangeBuffer failed");
                 intRangeBuffer.Release();
                 offsetBuffer.Release();
                 mid.Release();
@@ -135,7 +135,7 @@ public class Noise : MonoBehaviour
 
                 if (request2.hasError)
                 {
-                    Debug.Log("normalized heightmap failed");
+                    Debug.LogError("normalized heightmap failed");
                     heightMap.Release();
                     return;
                 }
@@ -211,7 +211,7 @@ public class Noise : MonoBehaviour
             {
                 if (request3.hasError)
                 {
-                    Debug.Log("Final smoothing readBack failed");
+                    Debug.LogError("Final smoothing readBack failed");
                     heightMap.Release();
                     resultBuffer.Release();
                     return;
@@ -228,7 +228,7 @@ public class Noise : MonoBehaviour
         float persistence, float lacunarity, Vector2 offset, int noiseType, float warpStrength, float warpFreq, int smoothingPasses)
     {
         // Set seed so this will be consistent
-        rng = new System.Random(seed);
+        Random.InitState(seed);
         int mapLength = mapWidth * mapHeight;
         int normalPrecision = 10000;
 
@@ -236,7 +236,7 @@ public class Noise : MonoBehaviour
         float2[] offsets = new float2[octaves];
         for (int i = 0; i < octaves; i++)
         {
-            offsets[i] = new float2(rng.Next(-100000, 100000) + offset.x, rng.Next(-100000, 100000) + offset.y);
+            offsets[i] = new float2(Random.Range(-100000, 100000) + offset.x, Random.Range(-100000, 100000) + offset.y);
         }
 
         ComputeBuffer offsetBuffer = new(octaves, 8);
@@ -343,12 +343,12 @@ public class Noise : MonoBehaviour
         float persistence, float lacunarity, Vector2 offset)
     {
         float[,] noiseMap = new float[mapWidth, mapHeight];
-        rng = new System.Random(seed);
+        Random.InitState(seed);
         
         Vector2[] offsets = new Vector2[octaves];
         for (int i = 0; i < octaves; i++)
         {
-            offsets[i] = new Vector2(rng.Next(-100000, 100000) + offset.x, rng.Next(-100000, 100000) + offset.y);
+            offsets[i] = new Vector2(Random.Range(-100000, 100000) + offset.x, Random.Range(-100000, 100000) + offset.y);
         }
 
         Vector2 midPoint = new(mapWidth / 2.0f, mapHeight / 2.0f);

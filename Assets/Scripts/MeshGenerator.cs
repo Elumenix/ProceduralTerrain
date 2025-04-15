@@ -1,14 +1,12 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using Unity.Mathematics;
-using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.UI;
-using Random = System.Random;
+using Random = UnityEngine.Random;
 
-[ExecuteInEditMode]
+//[ExecuteInEditMode]
 [RequireComponent(typeof(MeshFilter))]
 [RequireComponent(typeof(MeshRenderer))]
 public class MeshGenerator : MonoBehaviour
@@ -52,6 +50,10 @@ public class MeshGenerator : MonoBehaviour
     //public TerrainType[] regions;
     public AnimationCurve heightCurve;
     public NoiseType noiseType;
+    
+    // Variables made to help with the async nature of the code
+    private int[] dim;
+    private bool isGenerating = false;
     
     // Object reference variables
     private Renderer textureRenderer;
@@ -151,7 +153,7 @@ public class MeshGenerator : MonoBehaviour
     }
     
     // This is mainly for testing in edit mode, It shouldn't be called at runtime
-    private void OnValidate()
+    /*private void OnValidate()
     {
         Camera.main!.depthTextureMode = DepthTextureMode.Depth;
         if (mapWidth < 1) mapWidth = 1;
@@ -159,14 +161,18 @@ public class MeshGenerator : MonoBehaviour
         if (heightMultiplier < 0) heightMultiplier = 0;
         if (noiseScale <= 0) noiseScale = 0.0011f;
         if (lacunarity < 1) lacunarity = 1;
-    }
+    }*/
 
     public void GenerateMap()
     {
-        AsyncGPUReadback.WaitAllRequests(); // Don't try to accidentally overwrite requests
+        if (isGenerating) return;
+        isGenerating = true;
+        
+        // This will be used for all mapWidth/mapHeight calls from now on to prevent changing parameters messing up the map
+        dim = new int[] {mapWidth, mapHeight};
         
         // Step 1: Calculate a height map
-        noise.ComputeHeightMap(mapWidth + 1, mapHeight + 1, seed, noiseScale, octaves, persistence,
+        noise.ComputeHeightMap(dim[0] + 1, dim[1] + 1, seed, noiseScale, octaves, persistence,
             lacunarity, offset, (int) noiseType + 1, warpStrength, warpFrequency, smoothingPasses, (heightmap) =>
             {
                 heightMap = heightmap;
@@ -176,7 +182,6 @@ public class MeshGenerator : MonoBehaviour
                 {
                     // Set up Shared Buffers
                     // Pass map dimensions to shaders
-                    int[] dim = {mapWidth, mapHeight};
                     dimension = new ComputeBuffer(2, 4);
                     dimension.SetData(dim);
                     meshGenShader.SetBuffer(0, Dimension, dimension);
@@ -185,7 +190,7 @@ public class MeshGenerator : MonoBehaviour
 
 
                     // Set Shared variable
-                    int numVertices = (mapWidth + 1) * (mapHeight + 1);
+                    int numVertices = (dim[0] + 1) * (dim[1] + 1);
                     meshGenShader.SetInt(NumVertices, numVertices);
                     erosionShader.SetInt(NumVertices, numVertices);
                     normalShader.SetInt(NumVertices, numVertices);
@@ -202,6 +207,7 @@ public class MeshGenerator : MonoBehaviour
                                 // Step 5: Update mesh parameters so it can display
                                 UpdateMesh();
                                 dimension?.Release();
+                                isGenerating = false;
                             });
                         });
                     });
@@ -210,6 +216,7 @@ public class MeshGenerator : MonoBehaviour
                 {
                     // Release Shared Buffer
                     dimension?.Release();
+                    isGenerating = false;
                 }
             });
     }
@@ -240,7 +247,7 @@ public class MeshGenerator : MonoBehaviour
         {
             if (request.hasError)
             {
-                Debug.Log("Normal calculation failed");
+                Debug.LogError("Normal calculation failed");
             }
             else
             {
@@ -272,7 +279,7 @@ public class MeshGenerator : MonoBehaviour
     void CreateMeshGPU(Action callback)
     {
         // Pass distance between vertices to shader
-        float[] scale = {1f / mapWidth, 1f / mapHeight};
+        float[] scale = {1f / dim[0], 1f / dim[1]};
         ComputeBuffer mapScale = new ComputeBuffer(2, 4);
         mapScale.SetData(scale);
         meshGenShader.SetBuffer(0, Scale, mapScale);
@@ -283,7 +290,7 @@ public class MeshGenerator : MonoBehaviour
         meshGenShader.SetBuffer(0, HeightMap, mapHeights);
         
         // number of vertices/uvs
-        int size = (mapWidth + 1) * (mapHeight + 1);
+        int size = (dim[0] + 1) * (dim[1] + 1);
         
         // Create Buffer to hold vertices
         vertices = new Vector3[size];
@@ -298,7 +305,7 @@ public class MeshGenerator : MonoBehaviour
         meshGenShader.SetBuffer(0, UVBuffer, uvBuffer);
         
         // Create Buffer to hold indices
-        indices = new int[mapWidth * mapHeight * 6]; // 6 indices a square (two triangles)
+        indices = new int[dim[0] * dim[1] * 6]; // 6 indices a square (two triangles)
         ComputeBuffer indexBuffer = new ComputeBuffer(indices.Length, 4);
         indexBuffer.SetData(indices);
         meshGenShader.SetBuffer(0, IndexBuffer, indexBuffer);
@@ -344,7 +351,7 @@ public class MeshGenerator : MonoBehaviour
         {
             if (request.hasError)
             {
-                Debug.Log("vertex readBack failed");
+                Debug.LogError("vertex readBack failed");
             }
             else
             {
@@ -359,7 +366,7 @@ public class MeshGenerator : MonoBehaviour
         {
             if (request.hasError)
             {
-                Debug.Log("UV readBack failed");
+                Debug.LogError("UV readBack failed");
             }
             else
             {
@@ -374,7 +381,7 @@ public class MeshGenerator : MonoBehaviour
         {
             if (request.hasError)
             {
-                Debug.Log("Index readBack failed");
+                Debug.LogError("Index readBack failed");
             }
             else
             {
@@ -389,12 +396,16 @@ public class MeshGenerator : MonoBehaviour
 
     public void ComputeErosion(Action callback)
     {
-        // Reapplying seed for somewhat consistent results
-        Random rng = new(seed);
-        
         // Buffer will throw error if size 0 
-        if (numRainDrops == 0 || skipErosion) return;
+        if (numRainDrops == 0 || skipErosion)
+        {
+            callback?.Invoke();
+            return;
+        }
         
+        
+        // Reapplying seed for somewhat consistent results
+        Random.InitState(seed);
         
         // Generate raindrop positions
         int[] rd = new int[numRainDrops];
@@ -402,10 +413,10 @@ public class MeshGenerator : MonoBehaviour
         for (int i = 0; i < numRainDrops; i++)
         {
             // prevent vertices on the right or bottom edges
-            rd[i] = rng.Next(0, size);
+            rd[i] = Random.Range(0, size);
             
             // Prevents raindrop directly on the right or bottom edge of the map
-            if (rd[i] % (mapWidth+1) == mapWidth  || rd[i] / (mapWidth+1) == mapHeight)
+            if (rd[i] % (dim[0]+1) == dim[0]  || rd[i] / (dim[0]+1) == dim[1])
             {
                 i--;
             }
@@ -443,7 +454,7 @@ public class MeshGenerator : MonoBehaviour
         {
             if (request.hasError)
             {
-                Debug.Log("heightBuffer readBack failed");
+                Debug.LogError("heightBuffer readBack failed");
             }
             else
             {
