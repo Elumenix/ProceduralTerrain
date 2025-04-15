@@ -3,7 +3,7 @@
 
 StructuredBuffer<int> _Dimension; // {mapWidth, mapHeight}, based on number of faces, not vertices
 StructuredBuffer<float3> _VertexBuffer;
-RWStructuredBuffer<float3> _NormalBuffer : register(u0);
+RWStructuredBuffer<float3> _NormalBuffer;
 uint numVertices;
 
 [numthreads(64,1,1)]

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -40,7 +41,7 @@ public class Noise : MonoBehaviour
         // Set seed so this will be consistent
         Random.InitState(seed);
         int mapLength = mapWidth * mapHeight;
-        int normalPrecision = 10000;
+        //int normalPrecision = 10000;
 
         // Establish offsets for each point
         float2[] offsets = new float2[octaves];
@@ -54,10 +55,10 @@ public class Noise : MonoBehaviour
         noiseShader.SetBuffer(0, OffsetBuffer, offsetBuffer);
 
         // For normalization
-        int[] ends = {Int32.MaxValue, Int32.MinValue};
+        /*int[] ends = {Int32.MaxValue, Int32.MinValue};
         ComputeBuffer intRangeBuffer = new ComputeBuffer(2, 4);
         intRangeBuffer.SetData(ends);
-        noiseShader.SetBuffer(0, RangeValues, intRangeBuffer);
+        noiseShader.SetBuffer(0, RangeValues, intRangeBuffer);*/
 
 
         // For midpoint scaling
@@ -78,7 +79,7 @@ public class Noise : MonoBehaviour
         noiseShader.SetInt(NumVertices, mapLength);
         noiseShader.SetInt(MapWidth, mapWidth);
         noiseShader.SetInt(Octaves, octaves);
-        noiseShader.SetInt(NormalPrecision, normalPrecision);
+        //noiseShader.SetInt(NormalPrecision, normalPrecision);
         noiseShader.SetFloat(ScaleFactor, scale * mapWidth); // Scale is multiplied by mapWidth for consistency
         noiseShader.SetFloat(Persistence, persistence);
         noiseShader.SetFloat(Lacunarity, lacunarity);
@@ -92,12 +93,12 @@ public class Noise : MonoBehaviour
         
         
         // Request ends after noise calculation
-        AsyncGPUReadback.Request(intRangeBuffer, request =>
+        AsyncGPUReadback.Request(heightMap, request =>
         {
             if (request.hasError)
             {
                 Debug.LogError("intRangeBuffer failed");
-                intRangeBuffer.Release();
+                //intRangeBuffer.Release();
                 offsetBuffer.Release();
                 mid.Release();
                 heightMap.Release();
@@ -105,12 +106,24 @@ public class Noise : MonoBehaviour
             }
 
             // Successfully get data and continue
-            ends = request.GetData<int>().ToArray();
-            intRangeBuffer.Release();
+            //ends = request.GetData<int>().ToArray();
+            //intRangeBuffer.Release();
+            //Debug.Log(ends[0] + " " + ends[1]);
+            
+            // Retrieving the new heightmap and finding its range of values so we can normalize it
+            map = request.GetData<float>().ToArray();
+            float minF = float.MaxValue;
+            float maxF = float.MinValue;
+            foreach (float f in map)
+            {
+                minF = Mathf.Min(minF, f);
+                maxF = Math.Max(maxF, f);
+            }
             
             // Construct float buffer
             ComputeBuffer floatRangeBuffer = new ComputeBuffer(2, 4);
-            float[] preciseEnds = {ends[0] / (float) normalPrecision, ends[1] / (float) normalPrecision};
+            //float[] preciseEnds = {ends[0] / (float) normalPrecision, ends[1] / (float) normalPrecision};
+            float[] preciseEnds = {minF, maxF};
             floatRangeBuffer.SetData(preciseEnds); // I can just set this because name and size don't change
 
             // Set Data for height normalization shader

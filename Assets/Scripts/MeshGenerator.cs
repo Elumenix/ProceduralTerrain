@@ -6,7 +6,7 @@ using UnityEngine.Rendering;
 using UnityEngine.UI;
 using Random = UnityEngine.Random;
 
-//[ExecuteInEditMode]
+[ExecuteInEditMode]
 [RequireComponent(typeof(MeshFilter))]
 [RequireComponent(typeof(MeshRenderer))]
 public class MeshGenerator : MonoBehaviour

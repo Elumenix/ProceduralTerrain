@@ -130,10 +130,17 @@ void SimulateDrop(uint vert)
             
             // Add it to the vertices of the (square) face the drop is on
             // Weight for each vertex is bilinearly interpolated based on drops position in the face
+
+            _HeightBuffer[index] = max(_HeightBuffer[index], _HeightBuffer[index] + (int)round(depositAmount * (1-u) * (1-v) * precision));                                                         // Top Left
+            _HeightBuffer[index + 1] = max(_HeightBuffer[index+1], _HeightBuffer[index + 1] + (int)round(depositAmount * u * (1-v) * precision));                                                   // Top Right
+            _HeightBuffer[index + _Dimension[0] + 1] = max(_HeightBuffer[index + _Dimension[0] + 1], _HeightBuffer[index + _Dimension[0] + 1] + (int)round(depositAmount * (1-u) * v * precision)); // Bottom Left
+            _HeightBuffer[index + _Dimension[0] + 2] = max(_HeightBuffer[index + _Dimension[0] + 2], _HeightBuffer[index + _Dimension[0] + 2] + (int)round(depositAmount * u * v * precision));     // Bottom Right
+
+            /*
             InterlockedMax(_HeightBuffer[index], _HeightBuffer[index] + (int)round(depositAmount * (1-u) * (1-v) * precision));                                     // Top Left
             InterlockedMax(_HeightBuffer[index + 1], _HeightBuffer[index + 1] + (int)round(depositAmount * u * (1-v) * precision));                                 // Top Right
             InterlockedMax(_HeightBuffer[index + _Dimension[0] + 1], _HeightBuffer[index + _Dimension[0] + 1] + (int)round(depositAmount * (1-u) * v * precision)); // Bottom Left
-            InterlockedMax(_HeightBuffer[index + _Dimension[0] + 2], _HeightBuffer[index + _Dimension[0] + 2] + (int)round(depositAmount * u * v * precision));     // Bottom Right
+            InterlockedMax(_HeightBuffer[index + _Dimension[0] + 2], _HeightBuffer[index + _Dimension[0] + 2] + (int)round(depositAmount * u * v * precision));*/     // Bottom Right
         }
         else // downhill and the drop can hold more sediment
         {
@@ -207,7 +214,8 @@ void SimulateDrop(uint vert)
                         float delta = min(erosionAmount * weight, (float)_HeightBuffer[index] / precision);
 
                         // Erode the terrain by the proper amount. Min is used instead of add to prevent race condition anomalies
-                        InterlockedMin(_HeightBuffer[index], _HeightBuffer[index] - (int)round(delta * precision));
+                        _HeightBuffer[index] = min(_HeightBuffer[index], _HeightBuffer[index] - (int)round(delta * precision));
+                        //InterlockedMin(_HeightBuffer[index], _HeightBuffer[index] - (int)round(delta * precision));
                     }
                 }
             }
