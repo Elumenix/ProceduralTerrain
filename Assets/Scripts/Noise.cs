@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Runtime.InteropServices;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -32,7 +33,16 @@ public class Noise : MonoBehaviour
     private static readonly int WarpFrequency = Shader.PropertyToID("warpFrequency");
     private static readonly int OriginalHeightMap = Shader.PropertyToID("_OriginalHeightMap");
     private static readonly int SmoothedHeightMap = Shader.PropertyToID("_SmoothedHeightMap");
+    private static readonly int OctaveBuffer = Shader.PropertyToID("_OctaveBuffer");
 
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct OctaveParams
+    {
+        public Vector2 offset;
+        public float frequency;
+        public float amplitude;
+    }
     
     // Version of this function where we use the gpu asynchronously, which is required for Unity WebGPU beta
     public void ComputeHeightMap(int mapWidth, int mapHeight, int seed, float scale, int octaves,
@@ -43,53 +53,70 @@ public class Noise : MonoBehaviour
         int mapLength = mapWidth * mapHeight;
         //int normalPrecision = 10000;
 
-        // Establish offsets for each point
-        float2[] offsets = new float2[octaves];
-        for (int i = 0; i < octaves; i++)
-        {
-            offsets[i] = new float2(Random.Range(-100000, 100000) + offset.x, Random.Range(-100000, 100000) + offset.y);
-        }
-
-        ComputeBuffer offsetBuffer = new(octaves, 8);
-        offsetBuffer.SetData(offsets);
-        noiseShader.SetBuffer(0, OffsetBuffer, offsetBuffer);
-
-        // For normalization
-        /*int[] ends = {Int32.MaxValue, Int32.MinValue};
-        ComputeBuffer intRangeBuffer = new ComputeBuffer(2, 4);
-        intRangeBuffer.SetData(ends);
-        noiseShader.SetBuffer(0, RangeValues, intRangeBuffer);*/
-
-
-        // For midpoint scaling
-        float2[] midPoint = {new float2(mapWidth / 2.0f, mapHeight / 2.0f)};
-        ComputeBuffer mid = new ComputeBuffer(1, 8);
-        mid.SetData(midPoint);
-        noiseShader.SetBuffer(0, MidPoint, mid);
-
-
+        
         // Set Actual heightMap to buffer
         float[] map = new float[mapLength];
         ComputeBuffer heightMap = new ComputeBuffer(mapLength, 4);
         heightMap.SetData(map);
         noiseShader.SetBuffer(0, HeightMapBuffer, heightMap);
+        
+        // For midpoint scaling
+        float2[] midPoint = {new float2(mapWidth / 2.0f, mapHeight / 2.0f)};
+        ComputeBuffer mid = new ComputeBuffer(1, 8);
+        mid.SetData(midPoint);
+        noiseShader.SetBuffer(0, MidPoint, mid);
+        
+        // Precompute octave parameters to make shader more efficient
+        OctaveParams[] octParams = new OctaveParams[octaves];
+        for(int i = 0; i < octaves; i++)
+        {
+            octParams[i].offset = new float2(Random.Range(-100000, 100000) + offset.x, Random.Range(-100000, 100000) + offset.y);
+            octParams[i].frequency = Mathf.Pow(lacunarity, i);
+            octParams[i].amplitude = Mathf.Pow(persistence, i);
+        }
+        ComputeBuffer octaveBuffer = new ComputeBuffer(octaves, 16);
+        octaveBuffer.SetData(octParams);
+        noiseShader.SetBuffer(0, OctaveBuffer, octaveBuffer);
 
 
         // Set variables to shader
         noiseShader.SetInt(NumVertices, mapLength);
         noiseShader.SetInt(MapWidth, mapWidth);
         noiseShader.SetInt(Octaves, octaves);
-        //noiseShader.SetInt(NormalPrecision, normalPrecision);
         noiseShader.SetFloat(ScaleFactor, scale * mapWidth); // Scale is multiplied by mapWidth for consistency
-        noiseShader.SetFloat(Persistence, persistence);
-        noiseShader.SetFloat(Lacunarity, lacunarity);
-        noiseShader.SetInt(NoiseType, noiseType);
         noiseShader.SetFloat(WarpStrength, warpStrength);
         noiseShader.SetFloat(WarpFrequency, warpFreq);
+        
+        noiseShader.DisableKeyword("_PERLIN");
+        noiseShader.DisableKeyword("_SIMPLEX");
+        noiseShader.DisableKeyword("_WORLEY");
+
+        // Enable keyword of proper noise type for the shader
+        switch (noiseType)
+        {
+            case 1: 
+                noiseShader.EnableKeyword("_PERLIN");
+                break;
+            case 2: 
+                noiseShader.EnableKeyword("_SIMPLEX");
+                break;
+            default:
+                noiseShader.EnableKeyword("_WORLEY");
+                break;
+        }
+
+        if (warpStrength == 0 || warpFreq == 0)
+        {
+            noiseShader.DisableKeyword("_WARP_ENABLED");
+        }
+        else
+        {
+            noiseShader.EnableKeyword("_WARP_ENABLED");
+        }
 
 
         // Dispatch
-        noiseShader.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
+        noiseShader.Dispatch(0, Mathf.CeilToInt(mapLength / 128.0f), 1, 1);
         
         
         // Request ends after noise calculation
@@ -99,7 +126,7 @@ public class Noise : MonoBehaviour
             {
                 Debug.LogError("intRangeBuffer failed");
                 //intRangeBuffer.Release();
-                offsetBuffer.Release();
+                octaveBuffer.Release();
                 mid.Release();
                 heightMap.Release();
                 return;
@@ -137,7 +164,7 @@ public class Noise : MonoBehaviour
             
             
             // No longer needed
-            offsetBuffer.Release();
+            octaveBuffer.Release();
             mid.Release();
 
 

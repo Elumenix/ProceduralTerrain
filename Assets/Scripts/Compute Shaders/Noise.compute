@@ -1,28 +1,45 @@
 // Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel CSMain
-#include "SimplexNoise.hlsl"
-#include "PerlinNoise.hlsl"
-#include "WorleyNoise.hlsl"
+#pragma multi_compile _PERLIN _SIMPLEX _WORLEY
+
+
+// What noise function will be used depends on what is defined in C#
+#if defined(_PERLIN)
+    #include "PerlinNoise.hlsl"
+    #define SAMPLE_NOISE(pos) perlin(pos)
+#elif defined(_SIMPLEX)
+    #include "SimplexNoise.hlsl"
+    #define SAMPLE_NOISE(pos) simplex(pos)
+#elif defined(_WORLEY)
+    #include "WorleyNoise.hlsl"
+    #define SAMPLE_NOISE(pos) worley(pos)
+#else
+    #error "No noise type specified"
+#endif
+
+struct OctaveParams
+{
+    float2 offset;
+    float frequency;
+    float amplitude;
+};
 
 // Buffers
-StructuredBuffer<float2> _OffsetBuffer;
 StructuredBuffer<float2> _MidPoint; // To make scale happen from the center.
 //RWStructuredBuffer<int> _RangeValues; // For normalization. {min, max}
 RWStructuredBuffer<float> _HeightMapBuffer; // Everything is set to 0 before this runs
+StructuredBuffer<OctaveParams> _OctaveBuffer;
 
 // Global Variables
-uint noiseType;
 uint numVertices;
 uint mapWidth;
 uint octaves;
-//int normalPrecision;
 float scaleFactor;
-float persistence;
-float lacunarity;
 float warpStrength; 
 float warpFrequency;
 
-[numthreads(64,1,1)]
+
+[numthreads(128,1,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
     // This doesn't exist
@@ -32,72 +49,32 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     float x = (float)(id.x % mapWidth) - _MidPoint[0].x;
     float y = (float)(id.x / mapWidth) - _MidPoint[0].y;
     float2 pos = float2(x, y) / scaleFactor; // How zoomed in
-
-    // Starting values
-    float frequency = 1;
-    float amplitude = 1;
     
 
     // warp offset is calculated, the main goal of this is to slightly offset where we're sampling from
     // this helps to avoid artifacts in the terrain when the scale is too large. This is especially true for perlin noise.
-    float2 warp = float2(0, 0);
-    if (warpFrequency != 0) // Early out
-    {
-        // DisplacementScale makes it so that strength doesn't directly affect the final vertical offset
-        // regardless of where the warpFrequency (it was just a vertical offset value when freq was 0)
-        float displacementScale = warpStrength * warpFrequency;
-        float2 warpNoisePos = pos * warpFrequency;
-    
-        // Offset noise samples for x/y to avoid diagonal patterns
-        if (noiseType == 1)
-        {
-            warp = displacementScale * float2(
-                perlin(warpNoisePos),                     // dx
-                perlin(warpNoisePos + float2(100, 100)) // dy (offset seed)
-            );
-        }
-        else if (noiseType == 2)
-        {
-            warp = displacementScale * float2(
-                simplex(warpNoisePos),                     // dx
-                simplex(warpNoisePos + float2(100, 100)) // dy (offset seed)
-            );
-        }
-        else
-        {
-            warp = displacementScale * float2(
-                worley(warpNoisePos),                     // dx
-                worley(warpNoisePos + float2(100, 100)) // dy (offset seed)
-            );
-        }
-    }
-    
+
+    // DisplacementScale makes it so that strength doesn't directly affect the final vertical offset
+    // regardless of where the warpFrequency (it was just a vertical offset value when freq was 0)
+    float displacementScale = warpStrength * warpFrequency;
+    float2 warpNoisePos = pos * warpFrequency;
+
+    // Offset noise samples for x/y to avoid diagonal patterns
+    float2 warp = displacementScale * float2(
+        SAMPLE_NOISE(warpNoisePos), // dx
+        SAMPLE_NOISE(warpNoisePos + float2(100, 100)) // dy (offset seed)
+    );
     pos += warp;
     
+    [unroll(10)] // Will get out gracefully if less than 10 octaves as well
     for (uint i = 0; i < octaves; i++)
     {
         // Pick a new position to sample from each octave
-        float2 newPos = (pos - _OffsetBuffer[i]) * frequency;
+        float2 newPos = (pos - _OctaveBuffer[i].offset) * _OctaveBuffer[i].frequency;
 
         // Add a scaled value based on amplitude.
         // Range of returned values is insignificant because they will be normalized later
-        if (noiseType == 1)
-        {
-            _HeightMapBuffer[id.x] += perlin(newPos) * amplitude;
-        }
-        else if (noiseType == 2)
-        {
-            _HeightMapBuffer[id.x] += simplex(newPos) * amplitude;
-        }
-        else // if (noiseType == 3)
-        {
-            _HeightMapBuffer[id.x] += (worley(newPos) * 2 - 1) * amplitude;
-        }
-        
-
-        // Adjust/Weaken for next octave
-        frequency *= lacunarity;
-        amplitude *= persistence;
+        _HeightMapBuffer[id.x] += SAMPLE_NOISE(newPos) * _OctaveBuffer[i].amplitude;
     }
 
     // The following operation only works on int or uint variables, so I need to convert my floats

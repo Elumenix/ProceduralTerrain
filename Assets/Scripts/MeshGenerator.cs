@@ -1,6 +1,8 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.InteropServices;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.UI;
@@ -277,6 +279,14 @@ public class MeshGenerator : MonoBehaviour
         //textureRenderer.sharedMaterial.SetFloat(MinHeight, 0);
         //textureRenderer.sharedMaterial.SetFloat(MaxHeight, heightMultiplier);
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct VertexData
+    {
+        public Vector3 position;
+        public Vector2 uv;
+        public float height;
+    }
     
     void CreateMeshGPU(Action callback)
     {
@@ -285,15 +295,25 @@ public class MeshGenerator : MonoBehaviour
         ComputeBuffer mapScale = new ComputeBuffer(2, 4);
         mapScale.SetData(scale);
         meshGenShader.SetBuffer(0, Scale, mapScale);
-
+        
+        
+        // number of vertices/uvs
+        int size = (dim[0] + 1) * (dim[1] + 1);
+        VertexData[] data = new VertexData[size];
+        
+        // This will hold vertices, uvs, and the modified heightmap
+        ComputeBuffer vertexDataBuffer = new ComputeBuffer(size, 24);
+        vertexDataBuffer.SetData(data);
+        meshGenShader.SetBuffer(0, "_VertexDataBuffer", vertexDataBuffer);
+        
+        
         // Pass precalculated heightmap to shader
         ComputeBuffer mapHeights = new ComputeBuffer(heightMap.Length, 4);
         mapHeights.SetData(heightMap);
         meshGenShader.SetBuffer(0, HeightMap, mapHeights);
         
-        // number of vertices/uvs
-        int size = (dim[0] + 1) * (dim[1] + 1);
         
+        /*
         // Create Buffer to hold vertices
         vertices = new Vector3[size];
         ComputeBuffer vertexBuffer = new ComputeBuffer(size, 12);
@@ -310,104 +330,63 @@ public class MeshGenerator : MonoBehaviour
         indices = new int[dim[0] * dim[1] * 6]; // 6 indices a square (two triangles)
         ComputeBuffer indexBuffer = new ComputeBuffer(indices.Length, 4);
         indexBuffer.SetData(indices);
-        meshGenShader.SetBuffer(0, IndexBuffer, indexBuffer);
+        meshGenShader.SetBuffer(0, IndexBuffer, indexBuffer);*/
+        
+        
+        //vertices = new Vector3[size];
+        //uvs = new Vector2[size];
+        indices = new int[dim[0] * dim[1] * 6]; // 6 indices a square (two triangles)
         
         // Pass Variables
         meshGenShader.SetFloat(HeightMultiplier, heightMultiplier);
         
         // Dispatch Shader
         meshGenShader.Dispatch(0, Mathf.CeilToInt(size / 64.0f), 1, 1);
-
-        // Retrieve data: UpdateMesh() will use these values
-        //vertexBuffer.GetData(vertices);
-        //uvBuffer.GetData(uvs);
-        //indexBuffer.GetData(indices);
         
-        // Everything below this is meant to represent the 3 commented lines above
-
-        int buffersToRead = 4;
-        void finishedReading()
+        // Normally I would do indices in the gpu, but now that this is async I need to limit it to only using one buffer
+        // Indices don't perfectly map to vertices because of the edges, so I'm doing them in the cpu instead
+        // Compute indices in cpu while gpu works
+        int indexNum = 0;
+        for (int i = 0; i < dim[1]; i++)
         {
-            buffersToRead--;
-            
-            // If all buffers are handled, we are finished here
-            if (buffersToRead == 0)
+            for (int j = 0; j < dim[0]; j++)
             {
-                mapScale.Release();
-                mapHeights.Release();
+                int rowOffset = i * (dim[0] + 1);
+                // Top-left Triangle
+                indices[indexNum]     = j + rowOffset;
+                indices[indexNum + 1] = j + dim[0] + 1 + rowOffset;
+                indices[indexNum + 2] = j + 1 + rowOffset;
                 
-                // This would have been for atomic precision
-                /*
-                // Begin tracking heights after the mesh is created so that they can be used in erosion
-                heights = new int[size];
-                for (int i = 0; i < size; i++)
-                {
-                    // Capture vertex heights at intended precision so that they can be used in erosion and drawing
-                    heights[i] = (int)(vertices[i][1] * precision);
-                }*/
-                
-                callback?.Invoke();
+                // Bottom-right Triangle
+                indices[indexNum + 3] = j + 1 + rowOffset;
+                indices[indexNum + 4] = j + dim[0] + 1 + rowOffset;
+                indices[indexNum + 5] = j + dim[0] + 2 + rowOffset;
+
+                indexNum += 6;
             }
         }
         
-        // GPU ReadBack is required for Unity WebGPU
-        AsyncGPUReadback.Request(vertexBuffer, request =>
+        AsyncGPUReadback.Request(vertexDataBuffer, request =>
         {
-            if (request.hasError)
-            {
-                Debug.LogError("vertex readBack failed");
-            }
-            else
-            {
-                vertices = request.GetData<Vector3>().ToArray();
-            }
-
-            vertexBuffer.Release();
-            finishedReading();
-        });
-
-        AsyncGPUReadback.Request(uvBuffer, request =>
-        {
-            if (request.hasError)
-            {
-                Debug.LogError("UV readBack failed");
-            }
-            else
-            {
-                uvs = request.GetData<Vector2>().ToArray();
-            }
+            mapScale.Release();
+            mapHeights.Release();
             
-            uvBuffer.Release();
-            finishedReading();
-        });
-
-        AsyncGPUReadback.Request(indexBuffer, request =>
-        {
-            if (request.hasError)
-            {
-                Debug.LogError("Index readBack failed");
-            }
-            else
-            {
-                indices = request.GetData<int>().ToArray();
-            }
-            
-            indexBuffer.Release();
-            finishedReading();
-        });
-
-        AsyncGPUReadback.Request(mapHeights, request =>
-        {
             if (request.hasError)
             {
                 Debug.LogError("Height readBack failed");
             }
             else
             {
-                heightMap = request.GetData<float>().ToArray();
+                data = request.GetData<VertexData>().ToArray();
+                vertexDataBuffer.Release();
+
+                vertices = data.Select(v => v.position).ToArray();
+                uvs = data.Select(v => v.uv).ToArray();
+                heightMap = data.Select(v => v.height).ToArray();
             }
             
-            finishedReading();
+            // Continue to next step
+            callback?.Invoke();
         });
     }
 
