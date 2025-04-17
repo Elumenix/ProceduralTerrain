@@ -7,14 +7,14 @@
 // 2. The terrain is infinite, rather than being an island or suddenly stopping at the edge of the map
 
 // Buffers
-RWStructuredBuffer<int> _HeightBuffer; // float3 isn't used because they don't support atomic operations
+RWStructuredBuffer<float> _HeightBuffer; // float3 isn't used because they don't support atomic operations
 StructuredBuffer<int> _RainDropBuffer;
 StructuredBuffer<uint> _Dimension; // {mapWidth, mapHeight} Refers to number of faces, not vertices
 
 // Variables
 uint numVertices;
 uint radius;
-int precision;
+//int precision;
 float inertia;
 float maxSediment;
 float depositionRate;
@@ -27,15 +27,15 @@ float3 GetGradientAndHeight(float2 pos)
 {
     // Position clamping to a valid edge implies there is terrain outside the edge of the map that is a same height
     // Get row/column of top left index of (square) face
-    int col = (int)clamp(pos.x, 0, _Dimension[0] - .01f);
-    int row = (int)clamp(pos.y, 0, _Dimension[1] - .01f);
+    int col = clamp((int)pos.x, 0, (int)(_Dimension[0] - .01f));
+    int row = clamp((int)pos.y, 0, (int)(_Dimension[1] - .01f));
     int index = row * (_Dimension[0] + 1) + col;
 
     // Get height of all vertices of square
-    float nw = (float)_HeightBuffer[index] / precision;                           // Top Left
-    float ne = (float)_HeightBuffer[index + 1] / precision;                       // Top Right
-    float sw = (float)_HeightBuffer[index + (_Dimension[0] + 1)] / precision;     // Bottom Left
-    float se = (float)_HeightBuffer[index + (_Dimension[0] + 1) + 1] / precision; // Bottom Right
+    float nw = _HeightBuffer[index];                           // Top Left
+    float ne = _HeightBuffer[index + 1];                       // Top Right
+    float sw = _HeightBuffer[index + (_Dimension[0] + 1)];     // Bottom Left
+    float se = _HeightBuffer[index + (_Dimension[0] + 1) + 1]; // Bottom Right
     
     // Get coordinates of drop in (square) face.
     // Top left is (0,0)
@@ -131,10 +131,10 @@ void SimulateDrop(uint vert)
             // Add it to the vertices of the (square) face the drop is on
             // Weight for each vertex is bilinearly interpolated based on drops position in the face
 
-            _HeightBuffer[index] = max(_HeightBuffer[index], _HeightBuffer[index] + (int)round(depositAmount * (1-u) * (1-v) * precision));                                                         // Top Left
-            _HeightBuffer[index + 1] = max(_HeightBuffer[index+1], _HeightBuffer[index + 1] + (int)round(depositAmount * u * (1-v) * precision));                                                   // Top Right
-            _HeightBuffer[index + _Dimension[0] + 1] = max(_HeightBuffer[index + _Dimension[0] + 1], _HeightBuffer[index + _Dimension[0] + 1] + (int)round(depositAmount * (1-u) * v * precision)); // Bottom Left
-            _HeightBuffer[index + _Dimension[0] + 2] = max(_HeightBuffer[index + _Dimension[0] + 2], _HeightBuffer[index + _Dimension[0] + 2] + (int)round(depositAmount * u * v * precision));     // Bottom Right
+            _HeightBuffer[index] = max(_HeightBuffer[index], _HeightBuffer[index] + depositAmount * (1-u) * (1-v));                                                         // Top Left
+            _HeightBuffer[index + 1] = max(_HeightBuffer[index+1], _HeightBuffer[index + 1] + depositAmount * u * (1-v));                                                   // Top Right
+            _HeightBuffer[index + _Dimension[0] + 1] = max(_HeightBuffer[index + _Dimension[0] + 1], _HeightBuffer[index + _Dimension[0] + 1] + depositAmount * (1-u) * v); // Bottom Left
+            _HeightBuffer[index + _Dimension[0] + 2] = max(_HeightBuffer[index + _Dimension[0] + 2], _HeightBuffer[index + _Dimension[0] + 2] + depositAmount * u * v);     // Bottom Right
 
             /*
             InterlockedMax(_HeightBuffer[index], _HeightBuffer[index] + (int)round(depositAmount * (1-u) * (1-v) * precision));                                     // Top Left
@@ -152,7 +152,7 @@ void SimulateDrop(uint vert)
             float edgeX = min(position.x, _Dimension[0] - position.x);
             float edgeY = min(position.y, _Dimension[1] - position.y);
             float edgeDistance = min(edgeX, edgeY);
-            float edgeThreshold = radius;
+            float edgeThreshold = max((float)radius, 0.001f); // prevent division by 0
             float edgeFactor = clamp(edgeDistance / edgeThreshold, 0.0f, 1.0f);
             erosionAmount *= edgeFactor;
 
@@ -211,10 +211,10 @@ void SimulateDrop(uint vert)
                         // Make sure that terrain won't erode past the bottom of the map
                         // The following code is combined in the Interlocked Add to minimize race conditions between calculations
                         //float remainingHeight = (float)_HeightBuffer[index] / precision;
-                        float delta = min(erosionAmount * weight, (float)_HeightBuffer[index] / precision);
+                        float delta = min(erosionAmount * weight, _HeightBuffer[index]);
 
                         // Erode the terrain by the proper amount. Min is used instead of add to prevent race condition anomalies
-                        _HeightBuffer[index] = min(_HeightBuffer[index], _HeightBuffer[index] - (int)round(delta * precision));
+                        _HeightBuffer[index] = min(_HeightBuffer[index], _HeightBuffer[index] - delta);
                         //InterlockedMin(_HeightBuffer[index], _HeightBuffer[index] - (int)round(delta * precision));
                     }
                 }

@@ -62,8 +62,8 @@ public class MeshGenerator : MonoBehaviour
     // Mesh information
     private Vector3[] vertices;
     private Vector3[] normals;
-    private int[] heights;
-    private const int precision = 100000; // Precision to 3 decimal places
+    //private int[] heights;
+    //private const int precision = 1000; // Precision to 3 decimal places
     private int[] indices;
     private Vector2[] uvs;
     private float[,] noiseMap;
@@ -123,7 +123,7 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int Radius = Shader.PropertyToID("radius");
     private static readonly int Gravity = Shader.PropertyToID("gravity");
     private static readonly int MinSlope = Shader.PropertyToID("minSlope");
-    private static readonly int Precision = Shader.PropertyToID("precision");
+    //private static readonly int Precision = Shader.PropertyToID("precision");
 
     #endregion
 
@@ -148,6 +148,8 @@ public class MeshGenerator : MonoBehaviour
         sliders[7].onValueChanged.AddListener(val => { warpStrength = val; GenerateMap(); });
         sliders[8].onValueChanged.AddListener(val => { warpFrequency = val; GenerateMap(); });
         sliders[9].onValueChanged.AddListener(val => { smoothingPasses = (int)val; GenerateMap(); });
+        sliders[10].onValueChanged.AddListener(val => { numRainDrops = (int)val; GenerateMap(); });
+
         
         GenerateMap();
     }
@@ -323,7 +325,7 @@ public class MeshGenerator : MonoBehaviour
         
         // Everything below this is meant to represent the 3 commented lines above
 
-        int buffersToRead = 3;
+        int buffersToRead = 4;
         void finishedReading()
         {
             buffersToRead--;
@@ -334,13 +336,15 @@ public class MeshGenerator : MonoBehaviour
                 mapScale.Release();
                 mapHeights.Release();
                 
+                // This would have been for atomic precision
+                /*
                 // Begin tracking heights after the mesh is created so that they can be used in erosion
                 heights = new int[size];
                 for (int i = 0; i < size; i++)
                 {
                     // Capture vertex heights at intended precision so that they can be used in erosion and drawing
                     heights[i] = (int)(vertices[i][1] * precision);
-                }
+                }*/
                 
                 callback?.Invoke();
             }
@@ -391,6 +395,20 @@ public class MeshGenerator : MonoBehaviour
             indexBuffer.Release();
             finishedReading();
         });
+
+        AsyncGPUReadback.Request(mapHeights, request =>
+        {
+            if (request.hasError)
+            {
+                Debug.LogError("Height readBack failed");
+            }
+            else
+            {
+                heightMap = request.GetData<float>().ToArray();
+            }
+            
+            finishedReading();
+        });
     }
 
 
@@ -425,7 +443,7 @@ public class MeshGenerator : MonoBehaviour
         
         // Manage Compute Buffers
         ComputeBuffer heightBuffer = new(size, 4);
-        heightBuffer.SetData(heights);
+        heightBuffer.SetData(heightMap);
         ComputeBuffer rainDropBuffer = new(numRainDrops, 4);
         rainDropBuffer.SetData(rd);
         
@@ -442,7 +460,7 @@ public class MeshGenerator : MonoBehaviour
         erosionShader.SetFloat(Gravity,gravity);
         erosionShader.SetFloat(MinSlope, minSlope);
         erosionShader.SetInt(Radius, radius); // 0 would be normal square
-        erosionShader.SetInt(Precision, precision);
+        //erosionShader.SetInt(Precision, precision);
 
         // Execute erosion shader
         erosionShader.Dispatch(0, Mathf.CeilToInt(numRainDrops / 64.0f), 1, 1);
@@ -458,12 +476,12 @@ public class MeshGenerator : MonoBehaviour
             }
             else
             {
-                heights = request.GetData<int>().ToArray();
+                heightMap = request.GetData<float>().ToArray();
                 
                 // Transfer height data to vertices so that the mesh displays properly
                 for (int i = 0; i < size; i++)
                 {
-                    vertices[i].y = (float)heights[i] / precision;
+                    vertices[i].y = heightMap[i];
                 }
             }
             
