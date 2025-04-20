@@ -15,7 +15,7 @@ namespace Editor
             {
                 //meshGen.StopAllCoroutines();
                 meshGen.dimension?.Release(); // Prevent Leak
-                meshGen.GenerateMap();
+                meshGen.isDirty = true;
             }
 
             /*if (GUILayout.Button("Erode"))
@@ -25,7 +25,7 @@ namespace Editor
             
             if (GUILayout.Button("Reset"))
             {
-                meshGen.GenerateMap();
+                meshGen.isDirty = true;
             }
         }
     }

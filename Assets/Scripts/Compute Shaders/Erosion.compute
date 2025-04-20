@@ -8,12 +8,12 @@
 
 // Buffers
 RWStructuredBuffer<float> _HeightBuffer; // float3 isn't used because they don't support atomic operations
-StructuredBuffer<int> _RainDropBuffer;
 StructuredBuffer<uint> _Dimension; // {mapWidth, mapHeight} Refers to number of faces, not vertices
 
 // Variables
 uint numVertices;
 uint radius;
+uint _seed;
 //int precision;
 float inertia;
 float maxSediment;
@@ -230,11 +230,26 @@ void SimulateDrop(uint vert)
     }
 }
 
+// We're creating the random drop location at runtime in the gpu as an optimization over precomputing 300k+ drops on the cpu
+// PCG Hash is a well known hash function. Implementation from here: https://www.reedbeta.com/blog/hash-functions-for-gpu-rendering/
+uint PCG(uint input)
+{
+    uint state = input * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
 
 [numthreads(64,1,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= numVertices) return; // Don't need to iterate on
-    
-    SimulateDrop(_RainDropBuffer[id.x]);
+
+    uint hashVal = PCG(_seed + id.x);
+
+    // Put seed within terrain boundaries, excluding right and bottom edges
+    int x = hashVal % _Dimension[0]; // Upper bits for x position
+    int y = (hashVal >> 16) % _Dimension[1]; // Lower Bits for y position
+
+    // Converting to an index and starting the drop at that index
+    SimulateDrop(y * (_Dimension[0] + 1) + x);
 }

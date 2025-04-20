@@ -45,11 +45,10 @@ public class Noise : MonoBehaviour
     }
     
     // Version of this function where we use the gpu asynchronously, which is required for Unity WebGPU beta
-    public void ComputeHeightMap(int mapWidth, int mapHeight, int seed, float scale, int octaves,
-        float persistence, float lacunarity, Vector2 offset, int noiseType, float warpStrength, float warpFreq, int smoothingPasses, Action<float[]> callback)
+    public void ComputeHeightMap(int mapWidth, int mapHeight, Unity.Mathematics.Random _random, float scale, int octaves,
+        float persistence, float lacunarity, float2 offset, int noiseType, float warpStrength, float warpFreq, int smoothingPasses, Action<float[]> callback)
     {
         // Set seed so this will be consistent
-        Random.InitState(seed);
         int mapLength = mapWidth * mapHeight;
         //int normalPrecision = 10000;
 
@@ -70,7 +69,7 @@ public class Noise : MonoBehaviour
         OctaveParams[] octParams = new OctaveParams[octaves];
         for(int i = 0; i < octaves; i++)
         {
-            octParams[i].offset = new float2(Random.Range(-100000, 100000) + offset.x, Random.Range(-100000, 100000) + offset.y);
+            octParams[i].offset = _random.NextFloat2(-100000, 100000) + offset; 
             octParams[i].frequency = Mathf.Pow(lacunarity, i);
             octParams[i].amplitude = Mathf.Pow(persistence, i);
         }
@@ -137,14 +136,17 @@ public class Noise : MonoBehaviour
             //intRangeBuffer.Release();
             //Debug.Log(ends[0] + " " + ends[1]);
             
-            // Retrieving the new heightmap and finding its range of values so we can normalize it
-            map = request.GetData<float>().ToArray();
+            // Retrieving the new heightmap and finding its range of values so that we can normalize it
+            request.GetData<float>().CopyTo(map);
             float minF = float.MaxValue;
             float maxF = float.MinValue;
-            foreach (float f in map)
+
+            // ReSharper disable once ForCanBeConvertedToForeach
+            for (int i = 0; i < map.Length; i++)
             {
-                minF = Mathf.Min(minF, f);
-                maxF = Math.Max(maxF, f);
+                float current = map[i];
+                if (current < minF) minF = current;
+                if (current > maxF) maxF = current;
             }
             
             // Construct float buffer
@@ -163,7 +165,7 @@ public class Noise : MonoBehaviour
             normalizationShader.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
             
             
-            // No longer needed
+            // No longer needed, release while gpu works
             octaveBuffer.Release();
             mid.Release();
 
@@ -181,86 +183,67 @@ public class Noise : MonoBehaviour
                 }
                 
                 // Retrieve
-                map = request2.GetData<float>().ToArray();
+                request2.GetData<float>().CopyTo(map);
                 
                 // Decide if we will do smoothing passes
                 if (smoothingPasses == 0)
                 {
                     // If not, we're essentially done
-                    heightMap.Release();
                     callback(map);
+                    heightMap.Release();
                 }
                 else
                 {
-                    // This buffer will save the results of a smoothing pass
+                    // This buffer will save the results of a smoothing passes
                     ComputeBuffer resultBuffer = new ComputeBuffer(mapLength, 4);
 
                     // Do all smoothing passes then do final return
-                    SmoothMap(heightMap, resultBuffer, mapWidth, mapHeight, smoothingPasses, (smoothedMap) =>
-                    {
-                        heightMap.Release();
-                        resultBuffer.Release();
-                        callback(smoothedMap);
-                    });
+                    SmoothMap(heightMap, resultBuffer, mapWidth, mapHeight, smoothingPasses, callback);
                 }
             });
         });
     }
+
     
     // Helper function to do all smoothing passes on the map asynchronously, which is necessary for Unity WebGPU beta
-    void SmoothMap(ComputeBuffer heightMap, ComputeBuffer resultBuffer, int mapWidth, int mapHeight, int remainingPasses, Action<float[]> callback)
+    void SmoothMap(ComputeBuffer heightMap, ComputeBuffer resultBuffer, int mapWidth, int mapHeight, int smoothingPasses, Action<float[]> callback)
     {
-        // Set input/output buffers and parameters
-        smoothShader.SetBuffer(0, OriginalHeightMap, heightMap);
-        smoothShader.SetBuffer(0, SmoothedHeightMap, resultBuffer);
-        smoothShader.SetInt(MapWidth, mapWidth);
-        smoothShader.SetInt(MapHeight, mapHeight);
-
-        // Dispatch the compute shader
-        smoothShader.Dispatch(0, Mathf.CeilToInt(mapWidth / 8f), Mathf.CeilToInt(mapHeight / 8f), 1);
-
-
-        if (remainingPasses > 1)
+        ComputeBuffer currentInput = heightMap;
+        ComputeBuffer currentOutput = resultBuffer;
+        
+        // Do all passes before parsing data
+        for (int i = 0; i < smoothingPasses; i++)
         {
-            // A new request causes the program to wait until the previous one finishes, so this is safe
-            AsyncGPUReadback.Request(resultBuffer, request =>
-            {
-                if (request.hasError)
-                {
-                    Debug.LogError("Smoothing pass failed");
-                    heightMap.Release();
-                    resultBuffer.Release();
-                    return;
-                }
+            smoothShader.SetBuffer(0, OriginalHeightMap, currentInput);
+            smoothShader.SetBuffer(0, SmoothedHeightMap, currentOutput);
+            smoothShader.SetInt(MapWidth, mapWidth);
+            smoothShader.SetInt(MapHeight, mapHeight);
+            smoothShader.Dispatch(0, Mathf.CeilToInt(mapWidth / 8f), Mathf.CeilToInt(mapHeight / 8f), 1);
+            
+            // Swap buffers for the next pass
+            (currentInput, currentOutput) = (currentOutput, currentInput);
+        }
 
-                // Swap buffers and recurse
-                SmoothMap(
-                    resultBuffer,
-                    heightMap, // Swap input/output
-                    mapWidth,
-                    mapHeight,
-                    remainingPasses - 1,
-                    callback
-                );
-            });
-        }
-        else
+        // Determine which buffer holds the final result
+        ComputeBuffer finalBuffer = (smoothingPasses % 2 == 0) ? heightMap : resultBuffer;
+        
+
+        // Final ReadBack
+        AsyncGPUReadback.Request(finalBuffer, request =>
         {
-            // Final ReadBack
-            AsyncGPUReadback.Request(resultBuffer, request3 =>
+            if (request.hasError)
             {
-                if (request3.hasError)
-                {
-                    Debug.LogError("Final smoothing readBack failed");
-                    heightMap.Release();
-                    resultBuffer.Release();
-                    return;
-                }
-                
-                // Final height map data gets passed back
-                callback(request3.GetData<float>().ToArray());
-            });
-        }
+                Debug.LogError("Final smoothing readBack failed");
+                heightMap.Release();
+                resultBuffer.Release();
+                return;
+            }
+            
+            // Final height map data gets passed back
+            callback(request.GetData<float>().ToArray());
+            heightMap.Release();
+            resultBuffer.Release();
+        });
     }
     
     // Version of this function where we offload work to the gpu

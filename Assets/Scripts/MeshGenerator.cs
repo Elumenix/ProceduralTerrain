@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
+using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.UI;
@@ -48,10 +49,13 @@ public class MeshGenerator : MonoBehaviour
     [Range(0,5)]
     public int smoothingPasses;
     public int seed;
-    public Vector2 offset;
+    public float2 offset;
     //public TerrainType[] regions;
     public AnimationCurve heightCurve;
     public NoiseType noiseType;
+    private Unity.Mathematics.Random _random;
+    [HideInInspector]
+    public bool isDirty;
     
     // Variables made to help with the async nature of the code
     private int[] dim;
@@ -126,6 +130,7 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int Gravity = Shader.PropertyToID("gravity");
     private static readonly int MinSlope = Shader.PropertyToID("minSlope");
     //private static readonly int Precision = Shader.PropertyToID("precision");
+    private static readonly int Seed = Shader.PropertyToID("_seed");
 
     #endregion
 
@@ -140,22 +145,32 @@ public class MeshGenerator : MonoBehaviour
         textureRenderer = GetComponent<MeshRenderer>();
         
         // Hook up sliders to variables, I'm using inline functions because these are really simple and repetitive
-        sliders[0].onValueChanged.AddListener(val => { mapWidth = (int)val; mapHeight = (int) val; GenerateMap(); });
-        sliders[1].onValueChanged.AddListener(val => { noiseType = (NoiseType)((int)val); GenerateMap(); });
-        sliders[2].onValueChanged.AddListener(val => { noiseScale = val / 10.0f; GenerateMap(); });
-        sliders[3].onValueChanged.AddListener(val => { heightMultiplier = val; GenerateMap(); });
-        sliders[4].onValueChanged.AddListener(val => { octaves = (int)val; GenerateMap(); });
-        sliders[5].onValueChanged.AddListener(val => { persistence = val; GenerateMap(); });
-        sliders[6].onValueChanged.AddListener(val => { lacunarity = val; GenerateMap(); });
-        sliders[7].onValueChanged.AddListener(val => { warpStrength = val; GenerateMap(); });
-        sliders[8].onValueChanged.AddListener(val => { warpFrequency = val; GenerateMap(); });
-        sliders[9].onValueChanged.AddListener(val => { smoothingPasses = (int)val; GenerateMap(); });
-        sliders[10].onValueChanged.AddListener(val => { numRainDrops = (int)val; GenerateMap(); });
+        sliders[0].onValueChanged.AddListener(val => { mapWidth = (int)val; mapHeight = (int) val; isDirty = true; });
+        sliders[1].onValueChanged.AddListener(val => { noiseType = (NoiseType)((int)val); isDirty = true; });
+        sliders[2].onValueChanged.AddListener(val => { noiseScale = val / 10.0f; isDirty = true; });
+        sliders[3].onValueChanged.AddListener(val => { heightMultiplier = val; isDirty = true; });
+        sliders[4].onValueChanged.AddListener(val => { octaves = (int)val; isDirty = true; });
+        sliders[5].onValueChanged.AddListener(val => { persistence = val; isDirty = true; });
+        sliders[6].onValueChanged.AddListener(val => { lacunarity = val; isDirty = true; });
+        sliders[7].onValueChanged.AddListener(val => { warpStrength = val; if (warpFrequency != 0) {isDirty = true;} });
+        sliders[8].onValueChanged.AddListener(val => { warpFrequency = val; if (warpStrength != 0) {isDirty = true;} });
+        sliders[9].onValueChanged.AddListener(val => { smoothingPasses = (int)val; isDirty = true; });
+        sliders[10].onValueChanged.AddListener(val => { numRainDrops = (int)val; isDirty = true; });
 
         
-        GenerateMap();
+        isDirty = true;
     }
-    
+
+    private void Update()
+    {
+        // Generates map using current information if the map isn't up-to-date, or already in the middle of generating
+        if (isDirty && !isGenerating)
+        {
+            GenerateMap();
+            isDirty = false;
+        }
+    }
+
     // This is mainly for testing in edit mode, It shouldn't be called at runtime
     /*private void OnValidate()
     {
@@ -169,14 +184,15 @@ public class MeshGenerator : MonoBehaviour
 
     public void GenerateMap()
     {
-        if (isGenerating) return;
         isGenerating = true;
         
         // This will be used for all mapWidth/mapHeight calls from now on to prevent changing parameters messing up the map
         dim = new int[] {mapWidth, mapHeight};
+        // Creating new random reference so that I can batch random values
+        _random = new Unity.Mathematics.Random((uint)seed);
         
         // Step 1: Calculate a height map
-        noise.ComputeHeightMap(dim[0] + 1, dim[1] + 1, seed, noiseScale, octaves, persistence,
+        noise.ComputeHeightMap(dim[0] + 1, dim[1] + 1, _random, noiseScale, octaves, persistence,
             lacunarity, offset, (int) noiseType + 1, warpStrength, warpFrequency, smoothingPasses, (heightmap) =>
             {
                 heightMap = heightmap;
@@ -255,13 +271,13 @@ public class MeshGenerator : MonoBehaviour
             }
             else
             {
-                normals = request.GetData<Vector3>().ToArray();
+                request.GetData<Vector3>().CopyTo(normals);
             }
             
             // Clean up and return
+            callback?.Invoke();
             vertexBuffer.Release();
             normalBuffer.Release();
-            callback?.Invoke();
         });
     }
 
@@ -368,17 +384,13 @@ public class MeshGenerator : MonoBehaviour
         
         AsyncGPUReadback.Request(vertexDataBuffer, request =>
         {
-            mapScale.Release();
-            mapHeights.Release();
-            
             if (request.hasError)
             {
                 Debug.LogError("Height readBack failed");
             }
             else
             {
-                data = request.GetData<VertexData>().ToArray();
-                vertexDataBuffer.Release();
+                request.GetData<VertexData>().CopyTo(data);
 
                 vertices = data.Select(v => v.position).ToArray();
                 uvs = data.Select(v => v.uv).ToArray();
@@ -387,6 +399,11 @@ public class MeshGenerator : MonoBehaviour
             
             // Continue to next step
             callback?.Invoke();
+            
+            // Clean up buffers
+            mapScale.Release();
+            mapHeights.Release();
+            vertexDataBuffer.Release();
         });
     }
 
@@ -400,35 +417,12 @@ public class MeshGenerator : MonoBehaviour
             return;
         }
         
-        
-        // Reapplying seed for somewhat consistent results
-        Random.InitState(seed);
-        
-        // Generate raindrop positions
-        int[] rd = new int[numRainDrops];
         int size = vertices.Length;
-        for (int i = 0; i < numRainDrops; i++)
-        {
-            // prevent vertices on the right or bottom edges
-            rd[i] = Random.Range(0, size);
-            
-            // Prevents raindrop directly on the right or bottom edge of the map
-            if (rd[i] % (dim[0]+1) == dim[0]  || rd[i] / (dim[0]+1) == dim[1])
-            {
-                i--;
-            }
-        }
-        
         
         // Manage Compute Buffers
         ComputeBuffer heightBuffer = new(size, 4);
         heightBuffer.SetData(heightMap);
-        ComputeBuffer rainDropBuffer = new(numRainDrops, 4);
-        rainDropBuffer.SetData(rd);
-        
-        // Set Buffers
         erosionShader.SetBuffer(0, HeightBuffer, heightBuffer);
-        erosionShader.SetBuffer(0, RainDropBuffer, rainDropBuffer);
         
         // Set Variables
         erosionShader.SetFloat(Inertia, inertia);
@@ -439,6 +433,7 @@ public class MeshGenerator : MonoBehaviour
         erosionShader.SetFloat(Gravity,gravity);
         erosionShader.SetFloat(MinSlope, minSlope);
         erosionShader.SetInt(Radius, radius); // 0 would be normal square
+        erosionShader.SetInt(Seed, _random.NextInt());
         //erosionShader.SetInt(Precision, precision);
 
         // Execute erosion shader
@@ -455,7 +450,7 @@ public class MeshGenerator : MonoBehaviour
             }
             else
             {
-                heightMap = request.GetData<float>().ToArray();
+                request.GetData<float>().CopyTo(heightMap);
                 
                 // Transfer height data to vertices so that the mesh displays properly
                 for (int i = 0; i < size; i++)
@@ -465,9 +460,8 @@ public class MeshGenerator : MonoBehaviour
             }
             
             // Clean up and return
-            heightBuffer.Release();
-            rainDropBuffer.Release();
             callback?.Invoke(); 
+            heightBuffer.Release();
         });
     }
 }

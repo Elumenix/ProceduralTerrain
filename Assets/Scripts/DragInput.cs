@@ -70,20 +70,20 @@ public class DragInput : TMP_InputField
     {
         if (!int.TryParse(s, out int result) || result == meshGen.seed) return;
         meshGen.seed = result;
-        meshGen.GenerateMap();
+        meshGen.isDirty = true;
     }
 
     public void updateOffsetX(string s)
     {
         if (!float.TryParse(s, out float result) || Mathf.Approximately(result, meshGen.offset.x)) return;
         meshGen.offset.x = result;
-        meshGen.GenerateMap();
+        meshGen.isDirty = true;
     }
 
     public void updateOffsetY(string s)
     {
         if (!float.TryParse(s, out float result) || Mathf.Approximately(result, meshGen.offset.y)) return;
         meshGen.offset.y = result;
-        meshGen.GenerateMap();
+        meshGen.isDirty = true;
     }
 }
