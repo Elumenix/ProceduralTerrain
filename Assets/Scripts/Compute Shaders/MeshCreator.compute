@@ -5,18 +5,18 @@ struct VertexData
 {
     float3 position;
     float2 uv;
-    float height;
 };
 
 // Buffers
-StructuredBuffer<int> _Dimension; // {mapWidth, mapHeight} Based on number of faces, not number of vertices
-StructuredBuffer<float> _Scale; // essentially a float 2
-StructuredBuffer<float> _HeightMap;
+RWStructuredBuffer<float> _HeightMap;
 RWStructuredBuffer<VertexData> _VertexDataBuffer;
 
 // Variables
 uint numVertices;
+uint2 dimension; // {mapWidth, mapHeight} Based on number of faces, not number of vertices
 float heightMultiplier;
+float2 scale; // essentially a float 2
+
 
 [numthreads(64,1,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
@@ -24,14 +24,14 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     if (id.x >= numVertices) return; // Don't need to iterate on
 
     // find x/z position on the map
-    int x = id.x % (_Dimension[0] + 1);
-    int z = id.x / (_Dimension[0] + 1);
+    int x = id.x % (dimension[0] + 1);
+    int z = id.x / (dimension[0] + 1);
 
     // Update relevant data for each vertex
     float newHeight = _HeightMap[id.x] * heightMultiplier; // Add curve here if wanted
-    _VertexDataBuffer[id.x].position = float3(x * _Scale[0], newHeight, z * _Scale[1]);
-    _VertexDataBuffer[id.x].uv = float2(x * _Scale[0], z * _Scale[1]); // World Space Uv's
-    _VertexDataBuffer[id.x].height = newHeight;
+    _VertexDataBuffer[id.x].position = float3(x * scale.x, newHeight, z * scale.y);
+    _VertexDataBuffer[id.x].uv = float2(x * scale.x, z * scale.y); // World Space Uv's
+    _HeightMap[id.x] = newHeight;
 
 
     // Previous/Past options to help with understanding

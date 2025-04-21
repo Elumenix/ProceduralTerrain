@@ -14,7 +14,6 @@ namespace Editor
             if (DrawDefaultInspector())
             {
                 //meshGen.StopAllCoroutines();
-                meshGen.dimension?.Release(); // Prevent Leak
                 meshGen.isDirty = true;
             }
 

@@ -2,8 +2,8 @@
 #pragma kernel CSMain
 
 // Buffers
-RWStructuredBuffer<float> _RangeValues; // For normalization. It's a float2
 RWStructuredBuffer<float> _HeightMapBuffer;
+StructuredBuffer<float> _RangeValues; // This is essentially float2 {min, max}
 
 // Global Variables
 uint numVertices;

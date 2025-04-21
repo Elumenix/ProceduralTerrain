@@ -1,17 +1,17 @@
 // Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel CSMain
 
-StructuredBuffer<int> _Dimension; // {mapWidth, mapHeight}, based on number of faces, not vertices
 StructuredBuffer<float3> _VertexBuffer;
 RWStructuredBuffer<float3> _NormalBuffer;
 uint numVertices;
+int2 dimension; // {mapWidth, mapHeight}, based on number of faces, not vertices
 
 [numthreads(64,1,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= numVertices) return;
 
-    int width = _Dimension[0] + 1;
+    int width = dimension[0] + 1;
     int x = id.x % width;
     int y = id.x / width;
     float3 normalSum = float3(0, 0, 0);
@@ -36,7 +36,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     }
 
     // Quad 2: Top-right
-    if (x < _Dimension[0] && y > 0)
+    if (x < dimension[0] && y > 0)
     {
         float3 right = _VertexBuffer[id.x + 1];
         float3 top = _VertexBuffer[id.x - width];
@@ -54,7 +54,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     }
 
     // Quad 3: Bottom-right
-    if (x < _Dimension[0] && y < _Dimension[1])
+    if (x < dimension[0] && y < dimension[1])
     {
         float3 right = _VertexBuffer[id.x + 1];
         float3 bottom = _VertexBuffer[id.x + width];
@@ -72,7 +72,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     }
 
     // Quad 4: Bottom-left
-    if (x > 0 && y < _Dimension[1])
+    if (x > 0 && y < dimension[1])
     {
         float3 left = _VertexBuffer[id.x - 1];
         float3 bottom = _VertexBuffer[id.x + width];

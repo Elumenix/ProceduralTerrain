@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using Unity.Mathematics;
@@ -27,13 +28,14 @@ public class Noise : MonoBehaviour
     private static readonly int MapWidth = Shader.PropertyToID("mapWidth");
     private static readonly int MapHeight = Shader.PropertyToID("mapHeight");
     private static readonly int NumVertices = Shader.PropertyToID("numVertices");
-    private static readonly int MidPoint = Shader.PropertyToID("_MidPoint");
+    private static readonly int MidPoint = Shader.PropertyToID("midPoint");
     private static readonly int NoiseType = Shader.PropertyToID("noiseType");
     private static readonly int WarpStrength = Shader.PropertyToID("warpStrength");
     private static readonly int WarpFrequency = Shader.PropertyToID("warpFrequency");
     private static readonly int OriginalHeightMap = Shader.PropertyToID("_OriginalHeightMap");
     private static readonly int SmoothedHeightMap = Shader.PropertyToID("_SmoothedHeightMap");
     private static readonly int OctaveBuffer = Shader.PropertyToID("_OctaveBuffer");
+    private static readonly int Dimension = Shader.PropertyToID("dimension");
 
 
     [StructLayout(LayoutKind.Sequential)]
@@ -46,24 +48,21 @@ public class Noise : MonoBehaviour
     
     // Version of this function where we use the gpu asynchronously, which is required for Unity WebGPU beta
     public void ComputeHeightMap(int mapWidth, int mapHeight, Unity.Mathematics.Random _random, float scale, int octaves,
-        float persistence, float lacunarity, float2 offset, int noiseType, float warpStrength, float warpFreq, int smoothingPasses, Action<float[]> callback)
+        float persistence, float lacunarity, float2 offset, int noiseType, float warpStrength, float warpFreq, int smoothingPasses, Action<ComputeBuffer> callback)
     {
-        // Set seed so this will be consistent
         int mapLength = mapWidth * mapHeight;
-        //int normalPrecision = 10000;
+        
+        // Will be used for normalization later
+        // This is essentially our atomic buffer, where we will get the min/max height of every element 
+        ComputeBuffer rangeValues = new ComputeBuffer(2, 4);
+        rangeValues.SetData(new[] { float.MaxValue, float.MinValue });
 
         
         // Set Actual heightMap to buffer
-        float[] map = new float[mapLength];
         ComputeBuffer heightMap = new ComputeBuffer(mapLength, 4);
+        float[] map = new float[mapLength];
         heightMap.SetData(map);
-        noiseShader.SetBuffer(0, HeightMapBuffer, heightMap);
-        
-        // For midpoint scaling
-        float2[] midPoint = {new float2(mapWidth / 2.0f, mapHeight / 2.0f)};
-        ComputeBuffer mid = new ComputeBuffer(1, 8);
-        mid.SetData(midPoint);
-        noiseShader.SetBuffer(0, MidPoint, mid);
+
         
         // Precompute octave parameters to make shader more efficient
         OctaveParams[] octParams = new OctaveParams[octaves];
@@ -75,22 +74,24 @@ public class Noise : MonoBehaviour
         }
         ComputeBuffer octaveBuffer = new ComputeBuffer(octaves, 16);
         octaveBuffer.SetData(octParams);
+
+
+        // Set Buffers and variables
+        noiseShader.SetBuffer(0, RangeValues, rangeValues);
+        noiseShader.SetBuffer(0, HeightMapBuffer, heightMap);
         noiseShader.SetBuffer(0, OctaveBuffer, octaveBuffer);
-
-
-        // Set variables to shader
         noiseShader.SetInt(NumVertices, mapLength);
         noiseShader.SetInt(MapWidth, mapWidth);
         noiseShader.SetInt(Octaves, octaves);
         noiseShader.SetFloat(ScaleFactor, scale * mapWidth); // Scale is multiplied by mapWidth for consistency
         noiseShader.SetFloat(WarpStrength, warpStrength);
         noiseShader.SetFloat(WarpFrequency, warpFreq);
+        noiseShader.SetFloats(MidPoint, new float[] { mapWidth / 2f, mapHeight / 2f });
         
+        // Set Noise Type
         noiseShader.DisableKeyword("_PERLIN");
         noiseShader.DisableKeyword("_SIMPLEX");
         noiseShader.DisableKeyword("_WORLEY");
-
-        // Enable keyword of proper noise type for the shader
         switch (noiseType)
         {
             case 1: 
@@ -104,147 +105,70 @@ public class Noise : MonoBehaviour
                 break;
         }
 
-        if (warpStrength == 0 || warpFreq == 0)
-        {
-            noiseShader.DisableKeyword("_WARP_ENABLED");
-        }
-        else
-        {
-            noiseShader.EnableKeyword("_WARP_ENABLED");
-        }
-
 
         // Dispatch
         noiseShader.Dispatch(0, Mathf.CeilToInt(mapLength / 128.0f), 1, 1);
         
+        // TODO: Make sure Range Values is giving the proper values, I'm seeing some weird things in map generation
         
-        // Request ends after noise calculation
-        AsyncGPUReadback.Request(heightMap, request =>
-        {
-            if (request.hasError)
-            {
-                Debug.LogError("intRangeBuffer failed");
-                //intRangeBuffer.Release();
-                octaveBuffer.Release();
-                mid.Release();
-                heightMap.Release();
-                return;
-            }
-
-            // Successfully get data and continue
-            //ends = request.GetData<int>().ToArray();
-            //intRangeBuffer.Release();
-            //Debug.Log(ends[0] + " " + ends[1]);
-            
-            // Retrieving the new heightmap and finding its range of values so that we can normalize it
-            request.GetData<float>().CopyTo(map);
-            float minF = float.MaxValue;
-            float maxF = float.MinValue;
-
-            // ReSharper disable once ForCanBeConvertedToForeach
-            for (int i = 0; i < map.Length; i++)
-            {
-                float current = map[i];
-                if (current < minF) minF = current;
-                if (current > maxF) maxF = current;
-            }
-            
-            // Construct float buffer
-            ComputeBuffer floatRangeBuffer = new ComputeBuffer(2, 4);
-            //float[] preciseEnds = {ends[0] / (float) normalPrecision, ends[1] / (float) normalPrecision};
-            float[] preciseEnds = {minF, maxF};
-            floatRangeBuffer.SetData(preciseEnds); // I can just set this because name and size don't change
-
-            // Set Data for height normalization shader
-            normalizationShader.SetBuffer(0, RangeValues, floatRangeBuffer);
-            normalizationShader.SetBuffer(0, HeightMapBuffer, heightMap);
-            normalizationShader.SetInt(NumVertices, mapLength);
-
-
-            // Dispatch then fetch data
-            normalizationShader.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
-            
-            
-            // No longer needed, release while gpu works
-            octaveBuffer.Release();
-            mid.Release();
-
-
-            AsyncGPUReadback.Request(heightMap, request2 =>
-            {
-                // We're done with this after normalization
-                floatRangeBuffer.Release(); 
-
-                if (request2.hasError)
-                {
-                    Debug.LogError("normalized heightmap failed");
-                    heightMap.Release();
-                    return;
-                }
-                
-                // Retrieve
-                request2.GetData<float>().CopyTo(map);
-                
-                // Decide if we will do smoothing passes
-                if (smoothingPasses == 0)
-                {
-                    // If not, we're essentially done
-                    callback(map);
-                    heightMap.Release();
-                }
-                else
-                {
-                    // This buffer will save the results of a smoothing passes
-                    ComputeBuffer resultBuffer = new ComputeBuffer(mapLength, 4);
-
-                    // Do all smoothing passes then do final return
-                    SmoothMap(heightMap, resultBuffer, mapWidth, mapHeight, smoothingPasses, callback);
-                }
-            });
-        });
-    }
-
-    
-    // Helper function to do all smoothing passes on the map asynchronously, which is necessary for Unity WebGPU beta
-    void SmoothMap(ComputeBuffer heightMap, ComputeBuffer resultBuffer, int mapWidth, int mapHeight, int smoothingPasses, Action<float[]> callback)
-    {
-        ComputeBuffer currentInput = heightMap;
-        ComputeBuffer currentOutput = resultBuffer;
+        // Set Data for height normalization shader
+        normalizationShader.SetBuffer(0, HeightMapBuffer, heightMap);
+        normalizationShader.SetBuffer(0, RangeValues, rangeValues);
+        normalizationShader.SetInt(NumVertices, mapLength);
         
-        // Do all passes before parsing data
-        for (int i = 0; i < smoothingPasses; i++)
+        // Dispatch then fetch data
+        normalizationShader.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1); // Set Data for height normalization shader
+        
+        
+        // Set up additional Buffers in case we need to go through smoothing passes, If we do, we'll need to clean an additional buffer
+        ComputeBuffer finalBuffer = heightMap;
+        List<ComputeBuffer> buffersToRelease = new List<ComputeBuffer> { octaveBuffer, rangeValues };
+        
+        // Do we even bother with smoothing pass logic
+        if (smoothingPasses > 0)
         {
-            smoothShader.SetBuffer(0, OriginalHeightMap, currentInput);
-            smoothShader.SetBuffer(0, SmoothedHeightMap, currentOutput);
-            smoothShader.SetInt(MapWidth, mapWidth);
-            smoothShader.SetInt(MapHeight, mapHeight);
-            smoothShader.Dispatch(0, Mathf.CeilToInt(mapWidth / 8f), Mathf.CeilToInt(mapHeight / 8f), 1);
+            ComputeBuffer resultBuffer = new ComputeBuffer(mapLength, 4);
+            int[] dim = { mapWidth, mapHeight };
+            smoothShader.SetInts(Dimension, dim);
             
-            // Swap buffers for the next pass
-            (currentInput, currentOutput) = (currentOutput, currentInput);
+            // Do all passes before parsing data
+            for (int i = 0; i < smoothingPasses; i++)
+            {
+                smoothShader.SetBuffer(0, OriginalHeightMap, heightMap);
+                smoothShader.SetBuffer(0, SmoothedHeightMap, resultBuffer);
+                smoothShader.Dispatch(0, Mathf.CeilToInt(mapWidth / 8f), Mathf.CeilToInt(mapHeight / 8f), 1);
+            
+                // Swap buffers for the next pass
+                (heightMap, resultBuffer) = (resultBuffer, heightMap);
+            }
+            
+            finalBuffer = (smoothingPasses % 2 == 0) ? heightMap : resultBuffer;
+            buffersToRelease.Add((finalBuffer == heightMap) ? resultBuffer : heightMap);
         }
-
-        // Determine which buffer holds the final result
-        ComputeBuffer finalBuffer = (smoothingPasses % 2 == 0) ? heightMap : resultBuffer;
         
-
-        // Final ReadBack
+        
+        // All compute shaders are finished
         AsyncGPUReadback.Request(finalBuffer, request =>
         {
+            // Clean up buffers
+            foreach (ComputeBuffer buffer in buffersToRelease)
+            {
+                buffer.Release();
+            }
+            
+            // Error Check
             if (request.hasError)
             {
-                Debug.LogError("Final smoothing readBack failed");
-                heightMap.Release();
-                resultBuffer.Release();
+                finalBuffer.Release();
+                Debug.LogError("Something in ComputeHeightMap doesn't work");
                 return;
             }
             
-            // Final height map data gets passed back
-            callback(request.GetData<float>().ToArray());
-            heightMap.Release();
-            resultBuffer.Release();
+            // Pass the heightMap back to GenerateMap
+            callback(finalBuffer);
         });
     }
+    
     
     // Version of this function where we offload work to the gpu
     public float[] ComputeHeightMap(int mapWidth, int mapHeight, int seed, float scale, int octaves,

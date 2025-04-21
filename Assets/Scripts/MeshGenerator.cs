@@ -56,6 +56,7 @@ public class MeshGenerator : MonoBehaviour
     private Unity.Mathematics.Random _random;
     [HideInInspector]
     public bool isDirty;
+    private int mapLength;
     
     // Variables made to help with the async nature of the code
     private int[] dim;
@@ -73,13 +74,14 @@ public class MeshGenerator : MonoBehaviour
     private int[] indices;
     private Vector2[] uvs;
     private float[,] noiseMap;
-    private float[] heightMap;
+    //private float[] heightMap;
 
     // Compute Shader Data
     public ComputeShader meshGenShader;
     public ComputeShader erosionShader;
     public ComputeShader normalShader;
-    public ComputeBuffer dimension;
+    private ComputeBuffer heightMap;
+    private ComputeBuffer vertexBuffer;
 
     
     // Erosion Variables
@@ -108,8 +110,8 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int MaxHeight = Shader.PropertyToID("_MaxHeight");
     
     // String search optimization for Mesh Creation
-    private static readonly int Dimension = Shader.PropertyToID("_Dimension");
-    private static readonly int Scale = Shader.PropertyToID("_Scale");
+    private static readonly int Dimension = Shader.PropertyToID("dimension");
+    private static readonly int Scale = Shader.PropertyToID("scale");
     private static readonly int HeightMap = Shader.PropertyToID("_HeightMap");
     private static readonly int UVBuffer = Shader.PropertyToID("_UVBuffer");
     private static readonly int VertexBuffer = Shader.PropertyToID("_VertexBuffer");
@@ -134,7 +136,9 @@ public class MeshGenerator : MonoBehaviour
 
     #endregion
 
+    // Using this for inline methods
     public List<Slider> sliders;
+    private static readonly int VertexDataBuffer = Shader.PropertyToID("_VertexDataBuffer");
 
     void Start()
     {
@@ -186,59 +190,48 @@ public class MeshGenerator : MonoBehaviour
     {
         isGenerating = true;
         
-        // This will be used for all mapWidth/mapHeight calls from now on to prevent changing parameters messing up the map
+        // These will be used for all calls now on so that the player moving the slider won't affect late shader calls
         dim = new int[] {mapWidth, mapHeight};
+        mapLength = (mapWidth + 1) * (mapHeight + 1);
+        
+        // TODO: Check of random is even used in meshGenerator anymore
         // Creating new random reference so that I can batch random values
         _random = new Unity.Mathematics.Random((uint)seed);
         
+        
         // Step 1: Calculate a height map
         noise.ComputeHeightMap(dim[0] + 1, dim[1] + 1, _random, noiseScale, octaves, persistence,
-            lacunarity, offset, (int) noiseType + 1, warpStrength, warpFrequency, smoothingPasses, (heightmap) =>
+            lacunarity, offset, (int) noiseType + 1, warpStrength, warpFrequency, smoothingPasses, (map) =>
             {
-                heightMap = heightmap;
+                // Saving the compute buffer to the class
+                heightMap = map;
+                vertexBuffer = new ComputeBuffer(mapLength, 12);
                 
-                // safety
-                try
+                // Set Shared variable
+                meshGenShader.SetInt(NumVertices, mapLength);
+                erosionShader.SetInt(NumVertices, mapLength);
+                normalShader.SetInt(NumVertices, mapLength);
+                meshGenShader.SetInts(Dimension, dim);
+                erosionShader.SetInts(Dimension, dim);
+                normalShader.SetInts(Dimension, dim);
+
+                // Step 2: Create the Mesh
+                CreateMeshGPU(() =>
                 {
-                    // Set up Shared Buffers
-                    // Pass map dimensions to shaders
-                    dimension = new ComputeBuffer(2, 4);
-                    dimension.SetData(dim);
-                    meshGenShader.SetBuffer(0, Dimension, dimension);
-                    erosionShader.SetBuffer(0, Dimension, dimension);
-                    normalShader.SetBuffer(0, Dimension, dimension);
-
-
-                    // Set Shared variable
-                    int numVertices = (dim[0] + 1) * (dim[1] + 1);
-                    meshGenShader.SetInt(NumVertices, numVertices);
-                    erosionShader.SetInt(NumVertices, numVertices);
-                    normalShader.SetInt(NumVertices, numVertices);
-
-                    // Step 2: Create the Mesh
-                    CreateMeshGPU(() =>
+                    // Step 3: Simulate Erosion
+                    ComputeErosion(() =>
                     {
-                        // Step 3: Simulate Erosion
-                        ComputeErosion(() =>
+                        // Step 4: Recalculate normals to make sure lighting works correctly
+                        RecalculateNormals(() =>
                         {
-                            // Step 4: Recalculate normals to make sure lighting works correctly
-                            RecalculateNormals(() =>
-                            {
-                                // Step 5: Update mesh parameters so it can display
-                                UpdateMesh();
-                                dimension?.Release();
-                                isGenerating = false;
-                            });
+                            // Step 5: Update mesh parameters so it can display
+                            UpdateMesh();
+                            isGenerating = false;
                         });
                     });
-                }
-                catch
-                {
-                    // Release Shared Buffer
-                    dimension?.Release();
-                    isGenerating = false;
-                }
-            });
+                });
+            }
+        );
     }
 
     // The only reason this would be called is if GenerateMap was stopped early
@@ -247,17 +240,15 @@ public class MeshGenerator : MonoBehaviour
         // Now that all vertices are in their final positions, we want to calculate the normals of the mesh ourselves
         // This is because unity's innate RecalculateMeshNormals() isn't tuned for the sometimes steep slopes of 
         // terrain and causes visible artifacts. It's also likely faster to iterate over large meshes on the gpu.
-        ComputeBuffer vertexBuffer = new ComputeBuffer(vertices.Length, 12);
-        vertexBuffer.SetData(vertices);
-        ComputeBuffer normalBuffer = new ComputeBuffer(vertices.Length, 12);
-        normals = new Vector3[vertices.Length];
+        ComputeBuffer normalBuffer = new ComputeBuffer(mapLength, 12);
+        normals = new Vector3[mapLength];
         normalBuffer.SetData(normals);
         
         normalShader.SetBuffer(0, VertexBuffer, vertexBuffer);
         normalShader.SetBuffer(0, NormalBuffer, normalBuffer);
             
         // Dispatch normalShader
-        normalShader.Dispatch(0, Mathf.CeilToInt(vertices.Length / 64.0f), 1, 1);
+        normalShader.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
             
         // Save normals
         //normalBuffer.GetData(normals);
@@ -301,63 +292,35 @@ public class MeshGenerator : MonoBehaviour
     {
         public Vector3 position;
         public Vector2 uv;
-        public float height;
     }
     
     void CreateMeshGPU(Action callback)
     {
         // Pass distance between vertices to shader
         float[] scale = {1f / dim[0], 1f / dim[1]};
-        ComputeBuffer mapScale = new ComputeBuffer(2, 4);
-        mapScale.SetData(scale);
-        meshGenShader.SetBuffer(0, Scale, mapScale);
+        meshGenShader.SetFloats(Scale, scale);
         
         
         // number of vertices/uvs
-        int size = (dim[0] + 1) * (dim[1] + 1);
-        VertexData[] data = new VertexData[size];
+        VertexData[] data = new VertexData[mapLength];
         
         // This will hold vertices, uvs, and the modified heightmap
-        ComputeBuffer vertexDataBuffer = new ComputeBuffer(size, 24);
+        ComputeBuffer vertexDataBuffer = new ComputeBuffer(mapLength, 20);
         vertexDataBuffer.SetData(data);
-        meshGenShader.SetBuffer(0, "_VertexDataBuffer", vertexDataBuffer);
-        
-        
-        // Pass precalculated heightmap to shader
-        ComputeBuffer mapHeights = new ComputeBuffer(heightMap.Length, 4);
-        mapHeights.SetData(heightMap);
-        meshGenShader.SetBuffer(0, HeightMap, mapHeights);
-        
-        
-        /*
-        // Create Buffer to hold vertices
-        vertices = new Vector3[size];
-        ComputeBuffer vertexBuffer = new ComputeBuffer(size, 12);
-        vertexBuffer.SetData(vertices);
-        meshGenShader.SetBuffer(0, VertexBuffer, vertexBuffer);
-        
-        // Create Buffer to hold UVs
-        uvs = new Vector2[size];
-        ComputeBuffer uvBuffer = new ComputeBuffer(size, 8);
-        uvBuffer.SetData(uvs);
-        meshGenShader.SetBuffer(0, UVBuffer, uvBuffer);
-        
-        // Create Buffer to hold indices
-        indices = new int[dim[0] * dim[1] * 6]; // 6 indices a square (two triangles)
-        ComputeBuffer indexBuffer = new ComputeBuffer(indices.Length, 4);
-        indexBuffer.SetData(indices);
-        meshGenShader.SetBuffer(0, IndexBuffer, indexBuffer);*/
+        meshGenShader.SetBuffer(0, VertexDataBuffer, vertexDataBuffer);
+        meshGenShader.SetBuffer(0, HeightMap, heightMap);
         
         
         //vertices = new Vector3[size];
         //uvs = new Vector2[size];
         indices = new int[dim[0] * dim[1] * 6]; // 6 indices a square (two triangles)
         
+        // TODO: Would it be better to pass this to noise compute shaders rather than mesh creation?
         // Pass Variables
         meshGenShader.SetFloat(HeightMultiplier, heightMultiplier);
         
         // Dispatch Shader
-        meshGenShader.Dispatch(0, Mathf.CeilToInt(size / 64.0f), 1, 1);
+        meshGenShader.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
         
         // Normally I would do indices in the gpu, but now that this is async I need to limit it to only using one buffer
         // Indices don't perfectly map to vertices because of the edges, so I'm doing them in the cpu instead
@@ -394,16 +357,15 @@ public class MeshGenerator : MonoBehaviour
 
                 vertices = data.Select(v => v.position).ToArray();
                 uvs = data.Select(v => v.uv).ToArray();
-                heightMap = data.Select(v => v.height).ToArray();
+                vertexBuffer.SetData(vertices);
             }
             
             // Continue to next step
             callback?.Invoke();
             
             // Clean up buffers
-            mapScale.Release();
-            mapHeights.Release();
             vertexDataBuffer.Release();
+            heightMap.Release();
         });
     }
 
@@ -417,12 +379,8 @@ public class MeshGenerator : MonoBehaviour
             return;
         }
         
-        int size = vertices.Length;
-        
-        // Manage Compute Buffers
-        ComputeBuffer heightBuffer = new(size, 4);
-        heightBuffer.SetData(heightMap);
-        erosionShader.SetBuffer(0, HeightBuffer, heightBuffer);
+        erosionShader.SetBuffer(0, HeightBuffer, heightMap);
+        erosionShader.SetBuffer(0, VertexBuffer, vertexBuffer);
         
         // Set Variables
         erosionShader.SetFloat(Inertia, inertia);
@@ -442,7 +400,7 @@ public class MeshGenerator : MonoBehaviour
         // Copy height data
         //heightBuffer.GetData(heights);
         
-        AsyncGPUReadback.Request(heightBuffer, request =>
+        AsyncGPUReadback.Request(vertexBuffer, request =>
         {
             if (request.hasError)
             {
@@ -450,18 +408,10 @@ public class MeshGenerator : MonoBehaviour
             }
             else
             {
-                request.GetData<float>().CopyTo(heightMap);
-                
-                // Transfer height data to vertices so that the mesh displays properly
-                for (int i = 0; i < size; i++)
-                {
-                    vertices[i].y = heightMap[i];
-                }
+                request.GetData<Vector3>().CopyTo(vertices);
             }
             
-            // Clean up and return
             callback?.Invoke(); 
-            heightBuffer.Release();
         });
     }
 }
