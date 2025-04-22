@@ -5,6 +5,7 @@ struct VertexData
 {
     float3 position;
     float2 uv;
+    float3 normal;
 };
 
 // Buffers

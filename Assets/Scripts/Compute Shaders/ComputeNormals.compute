@@ -1,8 +1,16 @@
 // Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel CSMain
 
-StructuredBuffer<float3> _VertexBuffer;
-RWStructuredBuffer<float3> _NormalBuffer;
+struct VertexData
+{
+    float3 position;
+    float2 uv;
+    float3 normal;
+};
+
+// Buffers
+RWStructuredBuffer<VertexData> _VertexDataBuffer;
+StructuredBuffer<float> _HeightBuffer; 
 uint numVertices;
 int2 dimension; // {mapWidth, mapHeight}, based on number of faces, not vertices
 
@@ -11,22 +19,49 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= numVertices) return;
 
+    // Update internal Vertex Position based on possible erosion
+    _VertexDataBuffer[id.x].position[1] = _HeightBuffer[id.x];
+    float3 currentVertex = _VertexDataBuffer[id.x].position;
+
     int width = dimension[0] + 1;
     int x = id.x % width;
     int y = id.x / width;
     float3 normalSum = float3(0, 0, 0);
 
+    // Precomputing all directions, hopefully makes all threads sync better as they may be used multiple times
+    // Height is based on what may be those vertices heights after erosion, which this shader also updates
+    float3 top = _VertexDataBuffer[id.x - width].position;
+    top[1] = _HeightBuffer[id.x - width];
+    
+    float3 left = _VertexDataBuffer[id.x - 1].position;
+    left[1] = _HeightBuffer[id.x - 1];
+
+    float3 right = _VertexDataBuffer[id.x + 1].position;
+    right[1] = _HeightBuffer[id.x + 1];
+
+    float3 bottom = _VertexDataBuffer[id.x + width].position;
+    bottom[1] = _HeightBuffer[id.x + width];
+
+    float3 topLeft = _VertexDataBuffer[id.x - width - 1].position;
+    topLeft[1] = _HeightBuffer[id.x - width - 1];
+
+    float3 topRight = _VertexDataBuffer[id.x - width + 1].position;
+    topRight[1] = _HeightBuffer[id.x - width + 1];
+
+    float3 bottomRight = _VertexDataBuffer[id.x + width + 1].position;
+    bottomRight[1] = _HeightBuffer[id.x + width + 1];
+
+    float3 bottomLeft = _VertexDataBuffer[id.x + width - 1].position;
+    bottomLeft[1] = _HeightBuffer[id.x + width - 1];
+
+
     // Check 4 adjacent quads (6 triangles total)
     // Quad 1: Top-left
     if (x > 0 && y > 0)
     {
-        float3 left = _VertexBuffer[id.x - 1];
-        float3 top = _VertexBuffer[id.x - width];
-        float3 topLeft = _VertexBuffer[id.x - width - 1];
-        
         // Triangle 1: Current -> Left -> Top
-        float3 AB = left - _VertexBuffer[id.x];
-        float3 AC = top - _VertexBuffer[id.x];
+        float3 AB = left - currentVertex;
+        float3 AC = top - currentVertex;
         normalSum += cross(AC, AB); // Unity left-handed
         
         // Triangle 2: Left -> TopLeft -> Top
@@ -38,13 +73,9 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     // Quad 2: Top-right
     if (x < dimension[0] && y > 0)
     {
-        float3 right = _VertexBuffer[id.x + 1];
-        float3 top = _VertexBuffer[id.x - width];
-        float3 topRight = _VertexBuffer[id.x - width + 1];
-        
         // Triangle 1: Current -> Top -> Right
-        float3 AB = top - _VertexBuffer[id.x];
-        float3 AC = right - _VertexBuffer[id.x];
+        float3 AB = top - currentVertex;
+        float3 AC = right - currentVertex;
         normalSum += cross(AC, AB);
         
         // Triangle 2: Top -> TopRight -> Right
@@ -56,13 +87,9 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     // Quad 3: Bottom-right
     if (x < dimension[0] && y < dimension[1])
     {
-        float3 right = _VertexBuffer[id.x + 1];
-        float3 bottom = _VertexBuffer[id.x + width];
-        float3 bottomRight = _VertexBuffer[id.x + width + 1];
-        
         // Triangle 1: Current -> Right -> Bottom
-        float3 AB = right - _VertexBuffer[id.x];
-        float3 AC = bottom - _VertexBuffer[id.x];
+        float3 AB = right - currentVertex;
+        float3 AC = bottom - currentVertex;
         normalSum += cross(AC, AB);
         
         // Triangle 2: Right -> BottomRight -> Bottom
@@ -74,13 +101,9 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     // Quad 4: Bottom-left
     if (x > 0 && y < dimension[1])
     {
-        float3 left = _VertexBuffer[id.x - 1];
-        float3 bottom = _VertexBuffer[id.x + width];
-        float3 bottomLeft = _VertexBuffer[id.x + width - 1];
-        
         // Triangle 1: Current -> Bottom -> Left
-        float3 AB = bottom - _VertexBuffer[id.x];
-        float3 AC = left - _VertexBuffer[id.x];
+        float3 AB = bottom - currentVertex;
+        float3 AC = left - currentVertex;
         normalSum += cross(AC, AB);
         
         // Triangle 2: Bottom -> BottomLeft -> Left
@@ -89,6 +112,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
         normalSum += cross(AC, AB);
     }
 
-    _NormalBuffer[id.x] = normalize(normalSum);
+    // Finally, set the normal
+    _VertexDataBuffer[id.x].normal = normalize(normalSum);
 }
 

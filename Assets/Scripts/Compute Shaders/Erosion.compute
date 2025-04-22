@@ -7,7 +7,7 @@
 // 2. The terrain is infinite, rather than being an island or suddenly stopping at the edge of the map
 
 // Buffers
-RWStructuredBuffer<float3> _VertexBuffer;
+RWStructuredBuffer<float> _HeightBuffer; // working with floats is easier and more efficient than float3s
 
 // Variables
 uint numVertices;
@@ -32,10 +32,10 @@ float3 GetGradientAndHeight(float2 pos)
     int index = row * (dimension[0] + 1) + col;
 
     // Get height of all vertices of square
-    float nw = _VertexBuffer[index][1];                           // Top Left
-    float ne = _VertexBuffer[index + 1][1];                       // Top Right
-    float sw = _VertexBuffer[index + (dimension[0] + 1)][1];      // Bottom Left
-    float se = _VertexBuffer[index + (dimension[0] + 1) + 1][1];  // Bottom Right
+    float nw = _HeightBuffer[index];                           // Top Left
+    float ne = _HeightBuffer[index + 1];                       // Top Right
+    float sw = _HeightBuffer[index + (dimension[0] + 1)];      // Bottom Left
+    float se = _HeightBuffer[index + (dimension[0] + 1) + 1];  // Bottom Right
     
     // Get coordinates of drop in (square) face.
     // Top left is (0,0)
@@ -128,10 +128,10 @@ void SimulateDrop(uint vert)
             // Add it to the vertices of the (square) face the drop is on
             // Weight for each vertex is bilinearly interpolated based on drops position in the face
 
-            _VertexBuffer[index][1] = max(_VertexBuffer[index][1], _VertexBuffer[index][1] + depositAmount * (1-u) * (1-v));                                                         // Top Left
-            _VertexBuffer[index + 1][1] = max(_VertexBuffer[index+1][1], _VertexBuffer[index + 1][1] + depositAmount * u * (1-v));                                                   // Top Right
-            _VertexBuffer[index + dimension[0] + 1][1] = max(_VertexBuffer[index + dimension[0] + 1][1], _VertexBuffer[index + dimension[0] + 1][1] + depositAmount * (1-u) * v); // Bottom Left
-            _VertexBuffer[index + dimension[0] + 2][1] = max(_VertexBuffer[index + dimension[0] + 2][1], _VertexBuffer[index + dimension[0] + 2][1] + depositAmount * u * v);     // Bottom Right
+            _HeightBuffer[index] = max(_HeightBuffer[index], _HeightBuffer[index] + depositAmount * (1-u) * (1-v));                                                         // Top Left
+            _HeightBuffer[index + 1] = max(_HeightBuffer[index+1], _HeightBuffer[index + 1] + depositAmount * u * (1-v));                                                   // Top Right
+            _HeightBuffer[index + dimension[0] + 1] = max(_HeightBuffer[index + dimension[0] + 1], _HeightBuffer[index + dimension[0] + 1] + depositAmount * (1-u) * v); // Bottom Left
+            _HeightBuffer[index + dimension[0] + 2] = max(_HeightBuffer[index + dimension[0] + 2], _HeightBuffer[index + dimension[0] + 2] + depositAmount * u * v);     // Bottom Right
 
             /*
             InterlockedMax(_HeightBuffer[index], _HeightBuffer[index] + (int)round(depositAmount * (1-u) * (1-v) * precision));                                     // Top Left
@@ -208,10 +208,10 @@ void SimulateDrop(uint vert)
                         // Make sure that terrain won't erode past the bottom of the map
                         // The following code is combined in the Interlocked Add to minimize race conditions between calculations
                         //float remainingHeight = (float)_HeightBuffer[index] / precision;
-                        float delta = min(erosionAmount * weight, _VertexBuffer[index][1]);
+                        float delta = min(erosionAmount * weight, _HeightBuffer[index]);
 
                         // Erode the terrain by the proper amount. Min is used instead of add to prevent race condition anomalies
-                        _VertexBuffer[index][1] = min(_VertexBuffer[index][1], _VertexBuffer[index][1] - delta);
+                        _HeightBuffer[index] = min(_HeightBuffer[index], _HeightBuffer[index] - delta);
                         //InterlockedMin(_HeightBuffer[index], _HeightBuffer[index] - (int)round(delta * precision));
                     }
                 }

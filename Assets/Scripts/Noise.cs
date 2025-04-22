@@ -47,8 +47,9 @@ public class Noise : MonoBehaviour
     }
     
     // Version of this function where we use the gpu asynchronously, which is required for Unity WebGPU beta
-    public void ComputeHeightMap(int mapWidth, int mapHeight, Unity.Mathematics.Random _random, float scale, int octaves,
-        float persistence, float lacunarity, float2 offset, int noiseType, float warpStrength, float warpFreq, int smoothingPasses, Action<ComputeBuffer> callback)
+    public void ComputeHeightMap(int mapWidth, int mapHeight, Unity.Mathematics.Random _random, float scale,
+        int octaves, float persistence, float lacunarity, float2 offset, int noiseType, float warpStrength,
+        float warpFreq, int smoothingPasses, List<ComputeBuffer> toRelease, Action<ComputeBuffer> callback)
     {
         int mapLength = mapWidth * mapHeight;
         
@@ -122,7 +123,8 @@ public class Noise : MonoBehaviour
         
         // Set up additional Buffers in case we need to go through smoothing passes, If we do, we'll need to clean an additional buffer
         ComputeBuffer finalBuffer = heightMap;
-        List<ComputeBuffer> buffersToRelease = new List<ComputeBuffer> { octaveBuffer, rangeValues };
+        toRelease.Add(octaveBuffer);
+        toRelease.Add(rangeValues);
         
         // Do we even bother with smoothing pass logic
         if (smoothingPasses > 0)
@@ -143,30 +145,11 @@ public class Noise : MonoBehaviour
             }
             
             finalBuffer = (smoothingPasses % 2 == 0) ? heightMap : resultBuffer;
-            buffersToRelease.Add((finalBuffer == heightMap) ? resultBuffer : heightMap);
+            toRelease.Add((finalBuffer == heightMap) ? resultBuffer : heightMap);
         }
         
-        
-        // All compute shaders are finished
-        AsyncGPUReadback.Request(finalBuffer, request =>
-        {
-            // Clean up buffers
-            foreach (ComputeBuffer buffer in buffersToRelease)
-            {
-                buffer.Release();
-            }
-            
-            // Error Check
-            if (request.hasError)
-            {
-                finalBuffer.Release();
-                Debug.LogError("Something in ComputeHeightMap doesn't work");
-                return;
-            }
-            
-            // Pass the heightMap back to GenerateMap
-            callback(finalBuffer);
-        });
+        // Pass heightMap back to MeshGenerator
+        callback(finalBuffer);
     }
     
     
