@@ -1,0 +1,35 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+RWStructuredBuffer<uint> _IndexBuffer;
+uint quadWidth;
+
+[numthreads(64,1,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    int y = id.x / quadWidth;
+    int x = id.x % quadWidth;
+
+    // Row Offsets
+    int rowOffset = y * (quadWidth + 1);
+    int nextRowOffset = (y + 1) * (quadWidth + 1);
+
+    // The four corners of this quad
+    int current = rowOffset + x;
+    int next = current + 1;
+    int below = nextRowOffset + x;
+    int belowNext = below + 1;
+
+    // Which index in the indices array is this starting at
+    int index = 6 * id.x;
+            
+    // Top Left Triangle
+    _IndexBuffer[index] = current;
+    _IndexBuffer[index + 1] = below;
+    _IndexBuffer[index + 2] = next;
+            
+    // Bottom right triangle
+    _IndexBuffer[index + 3] = next;
+    _IndexBuffer[index + 4] = below;
+    _IndexBuffer[index + 5] = belowNext;
+}

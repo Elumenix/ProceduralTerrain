@@ -83,8 +83,10 @@ public class MeshGenerator : MonoBehaviour
     public ComputeShader meshGenShader;
     public ComputeShader erosionShader;
     public ComputeShader normalShader;
+    public ComputeShader indexShader;
     private ComputeBuffer heightMap;
     private ComputeBuffer vertexDataBuffer;
+    private ComputeBuffer indexBuffer;
 
     
     // Erosion Variables
@@ -139,6 +141,8 @@ public class MeshGenerator : MonoBehaviour
     // Using this for inline methods
     public List<Slider> sliders;
     private static readonly int VertexDataBuffer = Shader.PropertyToID("_VertexDataBuffer");
+    private static readonly int IndexBuffer = Shader.PropertyToID("_IndexBuffer");
+    private static readonly int QuadWidth = Shader.PropertyToID("quadWidth");
 
     void Start()
     {
@@ -267,7 +271,20 @@ public class MeshGenerator : MonoBehaviour
 
     private void UpdateMesh(Action callback)
     {
-        // Use only one asyncGPURequest to get all mesh data
+        
+        // Simple Async request to get indices
+        AsyncGPUReadback.Request(indexBuffer, request2 =>
+        {
+            NativeArray<int> indexData = request2.GetData<int>();
+            int numIndices = dim[0] * dim[1] * 6;
+
+            for (int i = 0; i < numIndices; i++)
+            {
+                indices[i] = indexData[i];
+            }
+        });
+
+        // One Async Request gets all other mesh data
         AsyncGPUReadback.Request(vertexDataBuffer, request =>
         {
             mesh.Clear();
@@ -279,13 +296,30 @@ public class MeshGenerator : MonoBehaviour
             }
             else
             {
-                VertexData[] data = request.GetData<VertexData>().ToArray();
+                // Get the NativeArray directly without converting to a managed array
+                NativeArray<VertexData> vertexData = request.GetData<VertexData>();
+                int vertexCount = vertexData.Length;
+                
+                // Pre-allocate arrays
+                vertices = new Vector3[vertexCount];
+                uvs = new Vector2[vertexCount];
+                normals = new Vector3[vertexCount];
 
-                mesh.vertices = data.Select(v => v.position).ToArray();
+                // Single loop to extract all data
+                for (int i = 0; i < vertexCount; i++)
+                {
+                    VertexData v = vertexData[i];
+                    vertices[i] = v.position;
+                    uvs[i] = v.uv;
+                    normals[i] = v.normal;
+                }
+
+                mesh.vertices = vertices;
                 mesh.triangles = indices;
-                mesh.uv = data.Select(v => v.uv).ToArray();
-                mesh.normals = data.Select(v => v.normal).ToArray();
+                mesh.uv = uvs;
+                mesh.normals = normals;
                 callback.Invoke();
+
             }
         });
 
@@ -350,74 +384,20 @@ public class MeshGenerator : MonoBehaviour
         GenerateIndices();
     }
     
-    // This is like the 7th different way I've come up with for calculating indices in this project
-   [BurstCompile]
-    struct IndexGenerationJob : IJobParallelFor
-    {
-        // Disabling restrictions lets me write to six indices per face (This took forever to figure out)
-        [WriteOnly, NativeDisableParallelForRestriction] public NativeArray<int> indices;
-        public int vertexWidth; 
-        public int vertexHeight; 
 
-        public void Execute(int i)
-        {
-            // This is essentially mapWidth/mapHeight
-            int quadsPerRow = vertexWidth - 1;
-            int quadsPerCol = vertexHeight - 1;
-
-            
-            int y = i / vertexWidth;
-            int x = i % vertexHeight;
-
-            // Ensure we don't process quads in the rightmost column or bottom row
-            if (x >= quadsPerRow || y >= quadsPerCol) return;
-
-            // Row Offsets
-            int rowOffset = y * vertexWidth;
-            int nextRowOffset = (y + 1) * vertexWidth;
-
-            // The four corners of this quad
-            int current = rowOffset + x;
-            int next = current + 1;
-            int below = nextRowOffset + x;
-            int belowNext = below + 1;
-
-            // What index in the indices array is this starting at
-            int index = 6 * i;
-            
-            // Top Left Triangle
-            indices[index] = current;
-            indices[index + 1] = below;
-            indices[index + 2] = next;
-            
-            // Bottom right triangle
-            indices[index + 3] = next;
-            indices[index + 4] = below;
-            indices[index + 5] = belowNext;
-        }
-    }
 
     void GenerateIndices()
     {
         int numIndices = dim[0] * dim[1] * 6;
-
+        indexBuffer = new ComputeBuffer(numIndices, 4);
         indices = new int[numIndices];
-        NativeArray<int> nativeIndices = new NativeArray<int>(numIndices, Allocator.TempJob);
+        
+        indexShader.SetBuffer(0, IndexBuffer, indexBuffer);
+        indexShader.SetInt(QuadWidth, dim[0]);
 
-        try
-        {
-            new IndexGenerationJob {
-                indices = nativeIndices,
-                vertexWidth = dim[0] + 1,
-                vertexHeight = dim[1] + 1
-            }.Schedule(dim[0] * dim[1], 64).Complete(); // Process valid quads in parallel
+        indexShader.Dispatch(0, Mathf.CeilToInt((dim[0] * dim[1]) / 64.0f), 1, 1);
 
-            nativeIndices.CopyTo(indices);
-        }
-        finally
-        {
-            nativeIndices.Dispose();
-        }
+        toRelease.Add(indexBuffer);
     }
 
     private void ComputeErosion()
