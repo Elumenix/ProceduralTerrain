@@ -14,7 +14,6 @@ uint numVertices;
 uint radius;
 uint _seed;
 uint2 dimension; // {mapWidth, mapHeight} Refers to number of faces, not vertices 
-//int precision;
 float inertia;
 float maxSediment;
 float depositionRate;

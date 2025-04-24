@@ -3,10 +3,14 @@
 
 RWStructuredBuffer<uint> _IndexBuffer;
 uint quadWidth;
+uint numQuads;
 
 [numthreads(64,1,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
+    // Non-existent
+    if (id.x >= numQuads) return;
+    
     int y = id.x / quadWidth;
     int x = id.x % quadWidth;
 

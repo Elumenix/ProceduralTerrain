@@ -70,12 +70,12 @@ public class MeshGenerator : MonoBehaviour
     private Mesh mesh;
     
     // Mesh information
-    private Vector3[] vertices;
-    private Vector3[] normals;
+    //private Vector3[] vertices;
+    //private Vector3[] normals;
     //private int[] heights;
     //private const int precision = 1000; // Precision to 3 decimal places
-    private int[] indices;
-    private Vector2[] uvs;
+    //private int[] indices;
+    //private Vector2[] uvs;
     private float[,] noiseMap;
     //private float[] heightMap;
 
@@ -143,6 +143,7 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int VertexDataBuffer = Shader.PropertyToID("_VertexDataBuffer");
     private static readonly int IndexBuffer = Shader.PropertyToID("_IndexBuffer");
     private static readonly int QuadWidth = Shader.PropertyToID("quadWidth");
+    private static readonly int NumQuads = Shader.PropertyToID("numQuads");
 
     void Start()
     {
@@ -151,6 +152,10 @@ public class MeshGenerator : MonoBehaviour
         mesh = new Mesh();
         GetComponent<MeshFilter>().mesh = mesh;
         textureRenderer = GetComponent<MeshRenderer>();
+
+        // Some Mesh Optimization
+        mesh.MarkDynamic();
+        mesh.indexFormat = IndexFormat.UInt32; // Allows larger meshes
         
         // Hook up sliders to variables, I'm using inline functions because these are really simple and repetitive
         sliders[0].onValueChanged.AddListener(val => { mapWidth = (int)val; mapHeight = (int)val; isDirty = true; });
@@ -190,12 +195,15 @@ public class MeshGenerator : MonoBehaviour
         if (lacunarity < 1) lacunarity = 1;
     }*/
     
+    // Uv is being split up to facilitate proper byte alignment
+    // Sends 32 bytes instead of 48, which is huge for how large this buffer will be
     [StructLayout(LayoutKind.Sequential)]
     struct VertexData
     {
         public Vector3 position;
-        public Vector2 uv;
+        public float u;
         public Vector3 normal;
+        public float v;
     }
 
     private void GenerateMap()
@@ -243,7 +251,6 @@ public class MeshGenerator : MonoBehaviour
                 UpdateMesh(() =>
                 {
                     // Finish up with data and allow future updates
-                    toRelease.Add(vertexDataBuffer);
                     isGenerating = false;
                 
                     // Clean up the buffers to prevent memory leaks
@@ -271,61 +278,86 @@ public class MeshGenerator : MonoBehaviour
 
     private void UpdateMesh(Action callback)
     {
+        bool indexDone = false;
+        bool vertexDone = false;
+        int[] indexData = null;
+        VertexData[] vertexData = null;
         
-        // Simple Async request to get indices
-        AsyncGPUReadback.Request(indexBuffer, request2 =>
+        // Both async Requests will fire at the same time, and whichever finishes last will update the mesh
+        AsyncGPUReadback.Request(indexBuffer, indexRequest =>
         {
-            NativeArray<int> indexData = request2.GetData<int>();
-            int numIndices = dim[0] * dim[1] * 6;
-
-            for (int i = 0; i < numIndices; i++)
+            if (indexRequest.hasError)
             {
-                indices[i] = indexData[i];
+                Debug.LogError("Index Generation has Failed");
+                callback.Invoke();
+                return;
+            }
+            
+            // Preallocate Array
+            int numIndices = dim[0] * dim[1] * 6;
+            indexData = new int[numIndices];
+            indexRequest.GetData<int>().CopyTo(indexData);
+            indexDone = true;
+            
+            
+
+            if (vertexDone)
+            {
+                ProcessMeshData(indexData, vertexData, callback);
             }
         });
 
         // One Async Request gets all other mesh data
-        AsyncGPUReadback.Request(vertexDataBuffer, request =>
+        AsyncGPUReadback.Request(vertexDataBuffer, vertexRequest =>
         {
-            mesh.Clear();
-            mesh.indexFormat = IndexFormat.UInt32; // Allows larger meshes
-
-            if (request.hasError)
+            if (vertexRequest.hasError)
             {
-                Debug.LogError("Terrain Generation has failed");
+                Debug.LogError("Terrain Generation has Failed");
+                return;
             }
-            else
+            
+            vertexData = new VertexData[mapLength];
+            vertexRequest.GetData<VertexData>().CopyTo(vertexData);
+            vertexDone = true;
+
+            if (indexDone)
             {
-                // Get the NativeArray directly without converting to a managed array
-                NativeArray<VertexData> vertexData = request.GetData<VertexData>();
-                int vertexCount = vertexData.Length;
-                
-                // Pre-allocate arrays
-                vertices = new Vector3[vertexCount];
-                uvs = new Vector2[vertexCount];
-                normals = new Vector3[vertexCount];
-
-                // Single loop to extract all data
-                for (int i = 0; i < vertexCount; i++)
-                {
-                    VertexData v = vertexData[i];
-                    vertices[i] = v.position;
-                    uvs[i] = v.uv;
-                    normals[i] = v.normal;
-                }
-
-                mesh.vertices = vertices;
-                mesh.triangles = indices;
-                mesh.uv = uvs;
-                mesh.normals = normals;
-                callback.Invoke();
-
+                ProcessMeshData(indexData, vertexData, callback);
             }
+            
+
+            // Update Materials
+            //textureRenderer.sharedMaterial.SetFloat(MinHeight, 0);
+            //textureRenderer.sharedMaterial.SetFloat(MaxHeight, heightMultiplier);
         });
+    }
 
-        // Update Materials
-        //textureRenderer.sharedMaterial.SetFloat(MinHeight, 0);
-        //textureRenderer.sharedMaterial.SetFloat(MaxHeight, heightMultiplier);
+    private void ProcessMeshData(int[] indexData, VertexData[] vertexData, Action callback)
+    {
+        // Pre-allocate arrays
+        int vertexCount = vertexData.Length;
+        Vector3[] vertices = new Vector3[vertexCount];
+        Vector2[] uvs = new Vector2[vertexCount];
+        Vector3[] normals = new Vector3[vertexCount];
+
+        // Single loop to extract all vertexData
+        for (int i = 0; i < vertexCount; i++)
+        {
+            VertexData v = vertexData[i];
+            vertices[i] = v.position;
+            uvs[i] = new Vector2(v.u, v.v);
+            normals[i] = v.normal;
+        }
+        
+        mesh.Clear();
+        mesh.vertices = vertices;
+        mesh.triangles = indexData;
+        mesh.uv = uvs;
+        mesh.normals = normals;
+        
+        // Optimize mesh access
+        mesh.RecalculateBounds();
+        callback.Invoke();
     }
     
     private void CreateMeshGPU()
@@ -343,6 +375,8 @@ public class MeshGenerator : MonoBehaviour
         vertexDataBuffer.SetData(data);
         meshGenShader.SetBuffer(0, VertexDataBuffer, vertexDataBuffer);
         meshGenShader.SetBuffer(0, HeightMap, heightMap);
+        toRelease.Add(vertexDataBuffer);
+
         
         
         // TODO: Would it be better to pass this to noise compute shaders rather than mesh creation?
@@ -388,15 +422,18 @@ public class MeshGenerator : MonoBehaviour
 
     void GenerateIndices()
     {
-        int numIndices = dim[0] * dim[1] * 6;
+        // Setup
+        int numQuads = dim[0] * dim[1];
+        int numIndices = numQuads * 6;
         indexBuffer = new ComputeBuffer(numIndices, 4);
-        indices = new int[numIndices];
         
+        // Set Shader data
         indexShader.SetBuffer(0, IndexBuffer, indexBuffer);
         indexShader.SetInt(QuadWidth, dim[0]);
-
-        indexShader.Dispatch(0, Mathf.CeilToInt((dim[0] * dim[1]) / 64.0f), 1, 1);
-
+        indexShader.SetInt(NumQuads, numQuads);
+        
+        // Dispatch Shader so that the indexBuffer is available for UpdateMesh
+        indexShader.Dispatch(0, Mathf.CeilToInt(numQuads / 64.0f), 1, 1);
         toRelease.Add(indexBuffer);
     }
 

@@ -4,8 +4,9 @@
 struct VertexData
 {
     float3 position;
-    float2 uv;
+    float u;
     float3 normal;
+    float v;
 };
 
 // Buffers
@@ -16,7 +17,7 @@ RWStructuredBuffer<VertexData> _VertexDataBuffer;
 uint numVertices;
 uint2 dimension; // {mapWidth, mapHeight} Based on number of faces, not number of vertices
 float heightMultiplier;
-float2 scale; // essentially a float 2
+float2 scale; 
 
 
 [numthreads(64,1,1)]
@@ -31,7 +32,8 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     // Update relevant data for each vertex
     float newHeight = _HeightMap[id.x] * heightMultiplier; // Add curve here if wanted
     _VertexDataBuffer[id.x].position = float3(x * scale.x, newHeight, z * scale.y);
-    _VertexDataBuffer[id.x].uv = float2(x * scale.x, z * scale.y); // World Space Uv's
+    _VertexDataBuffer[id.x].u = x * scale.x; // World Space UV
+    _VertexDataBuffer[id.x].v = z * scale.y; // World Space UV
     _HeightMap[id.x] = newHeight;
 
 
