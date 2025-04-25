@@ -68,6 +68,8 @@ public class MeshGenerator : MonoBehaviour
     // Object reference variables
     private Renderer textureRenderer;
     private Mesh mesh;
+    public Material meshCreator;
+
     
     // Mesh information
     //private Vector3[] vertices;
@@ -147,6 +149,10 @@ public class MeshGenerator : MonoBehaviour
 
     void Start()
     {
+        // Should only happen in the editor
+        vertexDataBuffer?.Release();
+        indexBuffer?.Release();
+        
         Camera.main!.depthTextureMode = DepthTextureMode.Depth;
         // Set reference for gameObject to use the mesh we create here
         mesh = new Mesh();
@@ -183,6 +189,24 @@ public class MeshGenerator : MonoBehaviour
             isDirty = false;
         }
     }
+
+    private void OnRenderObject()
+    {
+        if (vertexDataBuffer == null || indexBuffer == null) return;
+        
+        meshCreator.SetBuffer(VertexDataBuffer, vertexDataBuffer);
+        meshCreator.SetBuffer(IndexBuffer, indexBuffer);
+        meshCreator.SetPass(0);
+        Graphics.DrawProceduralNow(MeshTopology.Triangles, indexBuffer.count, 1);
+    }
+    
+
+    private void OnApplicationQuit()
+    {
+        vertexDataBuffer?.Release();
+        indexBuffer?.Release();
+    }
+
 
     // This is mainly for testing in edit mode, It shouldn't be called at runtime
     /*private void OnValidate()
@@ -242,13 +266,7 @@ public class MeshGenerator : MonoBehaviour
                 ComputeErosion();
                     
                 // Step 4: Recalculate normals to make sure lighting works correctly
-                RecalculateNormals();
-                    
-                // Finished with this
-                toRelease.Add(heightMap);
-                
-                // Step 5: Update mesh parameters so it can display
-                UpdateMesh(() =>
+                RecalculateNormals(() =>
                 {
                     // Finish up with data and allow future updates
                     isGenerating = false;
@@ -257,14 +275,14 @@ public class MeshGenerator : MonoBehaviour
                     foreach (ComputeBuffer buffer in toRelease)
                     {
                         buffer.Release();
-                    }
+                    } 
                 });
             }
         );
     }
 
     // The only reason this would be called is if GenerateMap was stopped early
-    private void RecalculateNormals()
+    private void RecalculateNormals(Action callback)
     {
         // Now that all vertices are in their final positions, we want to calculate the normals of the mesh ourselves
         // This is because unity's innate RecalculateMeshNormals() isn't tuned for the sometimes steep slopes of 
@@ -274,91 +292,14 @@ public class MeshGenerator : MonoBehaviour
             
         // Dispatch normalShader
         normalShader.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
-    }
 
-    private void UpdateMesh(Action callback)
-    {
-        bool indexDone = false;
-        bool vertexDone = false;
-        int[] indexData = null;
-        VertexData[] vertexData = null;
-        
-        // Both async Requests will fire at the same time, and whichever finishes last will update the mesh
-        AsyncGPUReadback.Request(indexBuffer, indexRequest =>
+        AsyncGPUReadback.Request(heightMap, request =>
         {
-            if (indexRequest.hasError)
-            {
-                Debug.LogError("Index Generation has Failed");
-                callback.Invoke();
-                return;
-            }
-            
-            // Preallocate Array
-            int numIndices = dim[0] * dim[1] * 6;
-            indexData = new int[numIndices];
-            indexRequest.GetData<int>().CopyTo(indexData);
-            indexDone = true;
-            
-            
-
-            if (vertexDone)
-            {
-                ProcessMeshData(indexData, vertexData, callback);
-            }
-        });
-
-        // One Async Request gets all other mesh data
-        AsyncGPUReadback.Request(vertexDataBuffer, vertexRequest =>
-        {
-            if (vertexRequest.hasError)
-            {
-                Debug.LogError("Terrain Generation has Failed");
-                return;
-            }
-            
-            vertexData = new VertexData[mapLength];
-            vertexRequest.GetData<VertexData>().CopyTo(vertexData);
-            vertexDone = true;
-
-            if (indexDone)
-            {
-                ProcessMeshData(indexData, vertexData, callback);
-            }
-            
-
-            // Update Materials
-            //textureRenderer.sharedMaterial.SetFloat(MinHeight, 0);
-            //textureRenderer.sharedMaterial.SetFloat(MaxHeight, heightMultiplier);
+            toRelease.Add(heightMap);
+            callback.Invoke();
         });
     }
 
-    private void ProcessMeshData(int[] indexData, VertexData[] vertexData, Action callback)
-    {
-        // Pre-allocate arrays
-        int vertexCount = vertexData.Length;
-        Vector3[] vertices = new Vector3[vertexCount];
-        Vector2[] uvs = new Vector2[vertexCount];
-        Vector3[] normals = new Vector3[vertexCount];
-
-        // Single loop to extract all vertexData
-        for (int i = 0; i < vertexCount; i++)
-        {
-            VertexData v = vertexData[i];
-            vertices[i] = v.position;
-            uvs[i] = new Vector2(v.u, v.v);
-            normals[i] = v.normal;
-        }
-        
-        mesh.Clear();
-        mesh.vertices = vertices;
-        mesh.triangles = indexData;
-        mesh.uv = uvs;
-        mesh.normals = normals;
-        
-        // Optimize mesh access
-        mesh.RecalculateBounds();
-        callback.Invoke();
-    }
     
     private void CreateMeshGPU()
     {
@@ -368,14 +309,15 @@ public class MeshGenerator : MonoBehaviour
         
         
         // number of vertices/uvs
-        VertexData[] data = new VertexData[mapLength];
+        //VertexData[] data = new VertexData[mapLength];
         
         // This will hold vertices, uvs, and the modified heightmap
+        vertexDataBuffer?.Release();
         vertexDataBuffer = new ComputeBuffer(mapLength, 32);
-        vertexDataBuffer.SetData(data);
+        //vertexDataBuffer.SetData(data);
         meshGenShader.SetBuffer(0, VertexDataBuffer, vertexDataBuffer);
         meshGenShader.SetBuffer(0, HeightMap, heightMap);
-        toRelease.Add(vertexDataBuffer);
+        //toRelease.Add(vertexDataBuffer);
 
         
         
@@ -425,6 +367,7 @@ public class MeshGenerator : MonoBehaviour
         // Setup
         int numQuads = dim[0] * dim[1];
         int numIndices = numQuads * 6;
+        indexBuffer?.Release();
         indexBuffer = new ComputeBuffer(numIndices, 4);
         
         // Set Shader data
@@ -434,7 +377,7 @@ public class MeshGenerator : MonoBehaviour
         
         // Dispatch Shader so that the indexBuffer is available for UpdateMesh
         indexShader.Dispatch(0, Mathf.CeilToInt(numQuads / 64.0f), 1, 1);
-        toRelease.Add(indexBuffer);
+        //toRelease.Add(indexBuffer);
     }
 
     private void ComputeErosion()
