@@ -31,7 +31,7 @@ StructuredBuffer<OctaveParams> _OctaveBuffer;
 
 // Global Variables
 float2 midPoint; // To make scale happen from the center.
-uint numVertices;
+//uint numVertices;
 uint mapWidth;
 uint octaves;
 float scaleFactor;
@@ -39,16 +39,17 @@ float warpStrength;
 float warpFrequency;
 
 
-[numthreads(128,1,1)]
+[numthreads(16,16,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
-    // This doesn't exist
-    if (id.x >= numVertices) return;
+    // This vertex doesn't exist, assumes n*n map
+    if (id.x >= mapWidth || id.y >= mapWidth) return;
 
     // What vertex this point represents; Starts from center instead of corner
-    float x = (float)(id.x % mapWidth) - midPoint.x;
-    float y = (float)(id.x / mapWidth) - midPoint.y;
-    float2 pos = float2(x, y) / scaleFactor; // How zoomed in
+    //float x = (float)(id.x % mapWidth) - midPoint.x;
+    //float y = (float)(id.x / mapWidth) - midPoint.y;
+    float2 pos = (id.xy - midPoint) / scaleFactor; // How zoomed in
+    uint index = id.y * mapWidth + id.x;
     
 
     // warp offset is calculated, the main goal of this is to slightly offset where we're sampling from
@@ -74,11 +75,11 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 
         // Add a scaled value based on amplitude.
         // Range of returned values is insignificant because they will be normalized later
-        _HeightMapBuffer[id.x] += SAMPLE_NOISE(newPos) * _OctaveBuffer[i].amplitude;
+        _HeightMapBuffer[index] += SAMPLE_NOISE(newPos) * _OctaveBuffer[i].amplitude;
     }
 
     
-    float value = _HeightMapBuffer[id.x];
+    float value = _HeightMapBuffer[index];
     
     // I'm essentially trying to mimic an atomic operation here since webGPU doesn't support it
     // While I wouldn't care it other compute shaders, this prevents a lot of cpu work and recreation of the noise buffer

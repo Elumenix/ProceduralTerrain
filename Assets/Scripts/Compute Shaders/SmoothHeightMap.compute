@@ -4,16 +4,15 @@ RWStructuredBuffer<float> _SmoothedHeightMap;
 StructuredBuffer<float> _OriginalHeightMap;
 uint2 dimension;
 
-
 [numthreads(8,8,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
-    if (id.x >= dimension[0] || id.y >= dimension[1])
+    if (id.x >= dimension.x || id.y >= dimension.y)
         return;
 
     int x = id.x;
     int y = id.y;
-    int index = y * dimension[0] + x;
+    int index = y * dimension.x + x;
 
     float sum = 0.0f;
     int count = 0;
@@ -26,9 +25,9 @@ void CSMain (uint3 id : SV_DispatchThreadID)
             int nx = x + dx;
             int ny = y + dy;
 
-            if (nx >= 0 && (uint)nx < dimension[0] && ny >= 0 && (uint)ny < dimension[1])
+            if (nx >= 0 && (uint)nx < dimension.x && ny >= 0 && (uint)ny < dimension.y)
             {
-                sum += _OriginalHeightMap[ny * dimension[0] + nx];
+                sum += _OriginalHeightMap[ny * dimension.x + nx];
                 count++;
             }
         }

@@ -1,10 +1,14 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
 using Unity.Mathematics;
 using UnityEngine;
+using UnityEngine.Profiling;
 using UnityEngine.Rendering;
+using Debug = UnityEngine.Debug;
 using Random = UnityEngine.Random;
 
 public class Noise : MonoBehaviour
@@ -52,27 +56,28 @@ public class Noise : MonoBehaviour
         float warpFreq, int smoothingPasses, List<ComputeBuffer> toRelease, Action<ComputeBuffer> callback)
     {
         int mapLength = mapWidth * mapHeight;
-        
+
         // Will be used for normalization later
         // This is essentially our atomic buffer, where we will get the min/max height of every element 
         ComputeBuffer rangeValues = new ComputeBuffer(2, 4);
-        rangeValues.SetData(new[] { float.MaxValue, float.MinValue });
+        rangeValues.SetData(new[] {float.MaxValue, float.MinValue});
 
-        
+
         // Set Actual heightMap to buffer
         ComputeBuffer heightMap = new ComputeBuffer(mapLength, 4);
         float[] map = new float[mapLength];
         heightMap.SetData(map);
 
-        
+
         // Precompute octave parameters to make shader more efficient
         OctaveParams[] octParams = new OctaveParams[octaves];
-        for(int i = 0; i < octaves; i++)
+        for (int i = 0; i < octaves; i++)
         {
-            octParams[i].offset = _random.NextFloat2(-100000, 100000) + offset; 
+            octParams[i].offset = _random.NextFloat2(-100000, 100000) + offset;
             octParams[i].frequency = Mathf.Pow(lacunarity, i);
             octParams[i].amplitude = Mathf.Pow(persistence, i);
         }
+
         ComputeBuffer octaveBuffer = new ComputeBuffer(octaves, 16);
         octaveBuffer.SetData(octParams);
 
@@ -81,35 +86,34 @@ public class Noise : MonoBehaviour
         noiseShader.SetBuffer(0, RangeValues, rangeValues);
         noiseShader.SetBuffer(0, HeightMapBuffer, heightMap);
         noiseShader.SetBuffer(0, OctaveBuffer, octaveBuffer);
-        noiseShader.SetInt(NumVertices, mapLength);
+        //noiseShader.SetInt(NumVertices, mapLength);
         noiseShader.SetInt(MapWidth, mapWidth);
         noiseShader.SetInt(Octaves, octaves);
         noiseShader.SetFloat(ScaleFactor, scale * mapWidth); // Scale is multiplied by mapWidth for consistency
         noiseShader.SetFloat(WarpStrength, warpStrength);
         noiseShader.SetFloat(WarpFrequency, warpFreq);
-        noiseShader.SetFloats(MidPoint, new float[] { mapWidth / 2f, mapHeight / 2f });
-        
+        noiseShader.SetFloats(MidPoint, new float[] {mapWidth / 2f, mapHeight / 2f});
+
         // Set Noise Type
         noiseShader.DisableKeyword("_PERLIN");
         noiseShader.DisableKeyword("_SIMPLEX");
         noiseShader.DisableKeyword("_WORLEY");
         switch (noiseType)
         {
-            case 1: 
+            case 1:
                 noiseShader.EnableKeyword("_PERLIN");
                 break;
-            case 2: 
+            case 2:
                 noiseShader.EnableKeyword("_SIMPLEX");
                 break;
             default:
                 noiseShader.EnableKeyword("_WORLEY");
                 break;
         }
-
-
-        // Dispatch
-        noiseShader.Dispatch(0, Mathf.CeilToInt(mapLength / 128.0f), 1, 1);
         
+        // Dispatch
+        noiseShader.Dispatch(0, Mathf.CeilToInt(mapWidth / 16f), Mathf.CeilToInt(mapWidth / 16f), 1);
+
         // TODO: Make sure Range Values is giving the proper values, I'm seeing some weird things in map generation
         
         // Set Data for height normalization shader
@@ -143,9 +147,9 @@ public class Noise : MonoBehaviour
                 // Swap buffers for the next pass
                 (heightMap, resultBuffer) = (resultBuffer, heightMap);
             }
-            
-            finalBuffer = (smoothingPasses % 2 == 0) ? heightMap : resultBuffer;
-            toRelease.Add((finalBuffer == heightMap) ? resultBuffer : heightMap);
+
+            finalBuffer = heightMap;
+            toRelease.Add(heightMap);
         }
         
         // Pass heightMap back to MeshGenerator
