@@ -1,18 +1,12 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.InteropServices;
-using Unity.Burst;
-using Unity.Collections;
-using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.UI;
-using Random = UnityEngine.Random;
 
-[ExecuteInEditMode]
+//[ExecuteInEditMode]
 [RequireComponent(typeof(MeshFilter))]
 [RequireComponent(typeof(MeshRenderer))]
 public class MeshGenerator : MonoBehaviour
@@ -89,6 +83,7 @@ public class MeshGenerator : MonoBehaviour
     private ComputeBuffer heightMap;
     private ComputeBuffer vertexDataBuffer;
     private ComputeBuffer indexBuffer;
+    private List<ComputeBuffer> toRelease;
 
     
     // Erosion Variables
@@ -110,9 +105,6 @@ public class MeshGenerator : MonoBehaviour
     public int radius;
     [Range(0, 0.1f)]
     public float minSlope;
-    
-    // Helps program flow
-    private List<ComputeBuffer> toRelease;
 
     #region StringSearchOptimization
     // String search optimization for material shader properties
@@ -146,13 +138,11 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int IndexBuffer = Shader.PropertyToID("_IndexBuffer");
     private static readonly int QuadWidth = Shader.PropertyToID("quadWidth");
     private static readonly int NumQuads = Shader.PropertyToID("numQuads");
+    private static readonly int Marker = Shader.PropertyToID("_Marker");
 
     void Start()
     {
-        // Should only happen in the editor
-        vertexDataBuffer?.Release();
-        indexBuffer?.Release();
-        
+        toRelease = new List<ComputeBuffer>();
         Camera.main!.depthTextureMode = DepthTextureMode.Depth;
         // Set reference for gameObject to use the mesh we create here
         mesh = new Mesh();
@@ -176,7 +166,7 @@ public class MeshGenerator : MonoBehaviour
         sliders[9].onValueChanged.AddListener(val => { smoothingPasses = (int)val; isDirty = true; });
         sliders[10].onValueChanged.AddListener(val => { numRainDrops = (int)val; isDirty = true; });
 
-        
+        // Draw with current data on frame 1
         isDirty = true;
     }
 
@@ -186,7 +176,6 @@ public class MeshGenerator : MonoBehaviour
         if (isDirty && !isGenerating)
         {
             GenerateMap();
-            isDirty = false;
         }
     }
 
@@ -205,6 +194,10 @@ public class MeshGenerator : MonoBehaviour
     {
         vertexDataBuffer?.Release();
         indexBuffer?.Release();
+        foreach (ComputeBuffer buffer in toRelease)
+        {
+            buffer.Release();
+        }
     }
 
 
@@ -233,15 +226,22 @@ public class MeshGenerator : MonoBehaviour
     private void GenerateMap()
     {
         isGenerating = true;
+        isDirty = false;
         
         // These will be used for all calls now on so that the player moving the slider won't affect late shader calls
         dim = new int[] {mapWidth, mapHeight};
         mapLength = (mapWidth + 1) * (mapHeight + 1);
-        toRelease = new List<ComputeBuffer>();
         
         // TODO: Check of random is even used in meshGenerator anymore
         // Creating new random reference so that I can batch random values
         _random = new Unity.Mathematics.Random((uint)seed);
+
+        // Clear buffers for new map
+        foreach (ComputeBuffer buffer in toRelease)
+        {
+            buffer.Release();
+        }
+        toRelease.Clear();
         
         
         // Step 1: Calculate a height map
@@ -266,40 +266,32 @@ public class MeshGenerator : MonoBehaviour
                 ComputeErosion();
                     
                 // Step 4: Recalculate normals to make sure lighting works correctly
-                RecalculateNormals(() =>
-                {
-                    // Finish up with data and allow future updates
-                    isGenerating = false;
-                
-                    // Clean up the buffers to prevent memory leaks
-                    foreach (ComputeBuffer buffer in toRelease)
-                    {
-                        buffer.Release();
-                    } 
-                });
+                RecalculateNormals();
             }
         );
     }
 
-    // The only reason this would be called is if GenerateMap was stopped early
-    private void RecalculateNormals(Action callback)
+    private void RecalculateNormals()
     {
+        // The strategy here is to make a very small buffer so that there isn't much data in the required readback
+        ComputeBuffer markerBuffer = new ComputeBuffer(1, 4);
+        toRelease.Add(markerBuffer);
+        
         // Now that all vertices are in their final positions, we want to calculate the normals of the mesh ourselves
         // This is because unity's innate RecalculateMeshNormals() isn't tuned for the sometimes steep slopes of 
         // terrain and causes visible artifacts. It's also likely faster to iterate over large meshes on the gpu.
         normalShader.SetBuffer(0, VertexDataBuffer, vertexDataBuffer);
         normalShader.SetBuffer(0, HeightBuffer, heightMap);
-            
-        // Dispatch normalShader
+        normalShader.SetBuffer(0, Marker, markerBuffer);
+
         normalShader.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
 
-        AsyncGPUReadback.Request(heightMap, request =>
+        // Very small Buffer Read to confirm completion
+        AsyncGPUReadback.Request(markerBuffer, request =>
         {
-            toRelease.Add(heightMap);
-            callback.Invoke();
+            isGenerating = false;
         });
     }
-
     
     private void CreateMeshGPU()
     {
@@ -307,17 +299,11 @@ public class MeshGenerator : MonoBehaviour
         float[] scale = {1f / dim[0], 1f / dim[1]};
         meshGenShader.SetFloats(Scale, scale);
         
-        
-        // number of vertices/uvs
-        //VertexData[] data = new VertexData[mapLength];
-        
         // This will hold vertices, uvs, and the modified heightmap
-        vertexDataBuffer?.Release();
         vertexDataBuffer = new ComputeBuffer(mapLength, 32);
-        //vertexDataBuffer.SetData(data);
+        toRelease.Add(vertexDataBuffer);
         meshGenShader.SetBuffer(0, VertexDataBuffer, vertexDataBuffer);
         meshGenShader.SetBuffer(0, HeightMap, heightMap);
-        //toRelease.Add(vertexDataBuffer);
 
         
         
@@ -328,47 +314,18 @@ public class MeshGenerator : MonoBehaviour
         // Dispatch Shader
         meshGenShader.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
         
-        // Normally I would do indices in the gpu, but now that this is async I need to limit it to only using one buffer
-        // Indices don't perfectly map to vertices because of the edges, so I'm doing them in the cpu instead
-        // Compute indices in cpu while gpu works
-        
-        /*indices = new int[dim[0] * dim[1] * 6]; // 6 indices a square (two triangles) 
-        int indexNum = 0;
-        for (int i = 0; i < dim[1]; i++)
-        {
-            int rowOffset = i * (dim[0] + 1);
-            for (int j = 0; j < dim[0]; j++)
-            {
-                // Top-left Triangle
-                indices[indexNum]     = j + rowOffset;
-                indices[indexNum + 1] = j + dim[0] + 1 + rowOffset;
-                indices[indexNum + 2] = j + 1 + rowOffset;
-                
-                // Bottom-right Triangle
-                indices[indexNum + 3] = j + 1 + rowOffset;
-                indices[indexNum + 4] = j + dim[0] + 1 + rowOffset;
-                indices[indexNum + 5] = j + dim[0] + 2 + rowOffset;
-
-                indexNum += 6;
-            }
-        }*/
-        
-        // TODO: Test to make sure this is actually faster
-        
         // Generating indices is the only major calculation on the cpu instead of the gpu where I may be handling 
         // hundreds of thousands of data points, so I'm using Burst + Jobs to speed it up
         GenerateIndices();
     }
-    
-
 
     void GenerateIndices()
     {
         // Setup
         int numQuads = dim[0] * dim[1];
         int numIndices = numQuads * 6;
-        indexBuffer?.Release();
         indexBuffer = new ComputeBuffer(numIndices, 4);
+        toRelease.Add(indexBuffer);
         
         // Set Shader data
         indexShader.SetBuffer(0, IndexBuffer, indexBuffer);

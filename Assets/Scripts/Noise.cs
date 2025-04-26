@@ -61,12 +61,12 @@ public class Noise : MonoBehaviour
         // This is essentially our atomic buffer, where we will get the min/max height of every element 
         ComputeBuffer rangeValues = new ComputeBuffer(2, 4);
         rangeValues.SetData(new[] {float.MaxValue, float.MinValue});
+        toRelease.Add(rangeValues);
 
 
         // Set Actual heightMap to buffer
         ComputeBuffer heightMap = new ComputeBuffer(mapLength, 4);
-        float[] map = new float[mapLength];
-        heightMap.SetData(map);
+
 
 
         // Precompute octave parameters to make shader more efficient
@@ -80,6 +80,7 @@ public class Noise : MonoBehaviour
 
         ComputeBuffer octaveBuffer = new ComputeBuffer(octaves, 16);
         octaveBuffer.SetData(octParams);
+        toRelease.Add(octaveBuffer);
 
 
         // Set Buffers and variables
@@ -116,6 +117,13 @@ public class Noise : MonoBehaviour
 
         // TODO: Make sure Range Values is giving the proper values, I'm seeing some weird things in map generation
         
+        /*AsyncGPUReadback.Request(rangeValues, request =>
+        {
+            float[] range = request.GetData<float>().ToArray();
+            
+            Debug.Log(range[0] + "  " + range[1]);
+        });*/
+        
         // Set Data for height normalization shader
         normalizationShader.SetBuffer(0, HeightMapBuffer, heightMap);
         normalizationShader.SetBuffer(0, RangeValues, rangeValues);
@@ -127,8 +135,6 @@ public class Noise : MonoBehaviour
         
         // Set up additional Buffers in case we need to go through smoothing passes, If we do, we'll need to clean an additional buffer
         ComputeBuffer finalBuffer = heightMap;
-        toRelease.Add(octaveBuffer);
-        toRelease.Add(rangeValues);
         
         // Do we even bother with smoothing pass logic
         if (smoothingPasses > 0)
@@ -149,13 +155,20 @@ public class Noise : MonoBehaviour
             }
 
             finalBuffer = heightMap;
+            toRelease.Add(resultBuffer);
+            toRelease.Add(heightMap);
+        }
+        else
+        {
             toRelease.Add(heightMap);
         }
         
         // Pass heightMap back to MeshGenerator
         callback(finalBuffer);
     }
-    
+
+
+    #region Depreciated
     
     // Version of this function where we offload work to the gpu
     public float[] ComputeHeightMap(int mapWidth, int mapHeight, int seed, float scale, int octaves,
@@ -337,4 +350,6 @@ public class Noise : MonoBehaviour
 
         return noiseMap;
     }
+    
+    #endregion
 }

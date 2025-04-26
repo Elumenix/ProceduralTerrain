@@ -11,7 +11,8 @@ struct VertexData
 
 // Buffers
 RWStructuredBuffer<VertexData> _VertexDataBuffer;
-StructuredBuffer<float> _HeightBuffer; 
+StructuredBuffer<float> _HeightBuffer;
+StructuredBuffer<int> _Marker; // This is a single int. This buffer is only used as a miniscule readBack to confirm completion
 uint numVertices;
 int2 dimension; // {mapWidth, mapHeight}, based on number of faces, not vertices
 
