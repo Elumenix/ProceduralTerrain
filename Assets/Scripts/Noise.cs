@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Rendering;
+using Debug = UnityEngine.Debug;
 using Random = UnityEngine.Random;
 
 public class Noise : MonoBehaviour
@@ -15,9 +16,10 @@ public class Noise : MonoBehaviour
     static float minHeight;
     static float maxHeight;
     public ComputeShader noiseShader;
+    public ComputeShader reductionShader;
     public ComputeShader normalizationShader;
     public ComputeShader smoothShader;
-    
+
     // Cached Strings : Speeds things up 
     private static readonly int OffsetBuffer = Shader.PropertyToID("_OffsetBuffer");
     private static readonly int RangeValues = Shader.PropertyToID("_RangeValues");
@@ -41,6 +43,9 @@ public class Noise : MonoBehaviour
     private static readonly int Resolution = Shader.PropertyToID("resolution");
     private static readonly int ReadBuffer = Shader.PropertyToID("_ReadBuffer");
     private static readonly int WriteBuffer = Shader.PropertyToID("_WriteBuffer");
+    private static readonly int MinMax = Shader.PropertyToID("_MinMax");
+    private static readonly int MinMaxInput = Shader.PropertyToID("_MinMaxInput");
+    private static readonly int MinMaxResult = Shader.PropertyToID("_MinMaxResult");
 
 
     [StructLayout(LayoutKind.Sequential)]
@@ -50,25 +55,19 @@ public class Noise : MonoBehaviour
         public float frequency;
         public float amplitude;
     }
-    
+
     // Version of this function where we use the gpu asynchronously, which is required for Unity WebGPU beta
     public void ComputeHeightMap(int mapResolution, Unity.Mathematics.Random _random, float scale,
         int octaves, float persistence, float lacunarity, float2 offset, int noiseType, float warpStrength,
-        float warpFreq, int smoothingPasses, float heightMultiplier, List<ComputeBuffer> pendingRelease, Action<ComputeBuffer> callback)
+        float warpFreq, int smoothingPasses, float heightMultiplier, List<ComputeBuffer> pendingRelease,
+        Action<ComputeBuffer> callback)
     {
         int mapLength = mapResolution * mapResolution;
         int threadGroups = Mathf.CeilToInt(mapResolution / 16.0f);
 
-
-        // Will be used for normalization later
-        // This is essentially our atomic buffer, where we will get the min/max height of every element 
-        ComputeBuffer rangeValues = new ComputeBuffer(2, 4);
-        rangeValues.SetData(new[] {float.MaxValue, float.MinValue});
-        pendingRelease.Add(rangeValues);
-
-
         // Set Actual heightMap to buffer
         ComputeBuffer heightMap = new ComputeBuffer(mapLength, 4);
+        heightMap.SetData(new float[mapLength]);
         pendingRelease.Add(heightMap);
 
 
@@ -86,7 +85,6 @@ public class Noise : MonoBehaviour
         pendingRelease.Add(octaveBuffer);
 
         // Set Buffers and variables
-        noiseShader.SetBuffer(0, RangeValues, rangeValues);
         noiseShader.SetBuffer(0, HeightMapBuffer, heightMap);
         noiseShader.SetBuffer(0, OctaveBuffer, octaveBuffer);
         //noiseShader.SetInt(NumVertices, mapLength);
@@ -113,30 +111,49 @@ public class Noise : MonoBehaviour
                 noiseShader.EnableKeyword("_WORLEY");
                 break;
         }
-        
-        // Dispatch
         noiseShader.Dispatch(0, threadGroups, threadGroups, 1);
-
         
-        // Set Data for height normalization shader
+        // Reduction refers to me iterating the mesh to find the min and max height values
+        // This could have been done in two lines in the noise shader using atomics IF UNITY'S WEBGPU IMPLEMENTATION SUPPORTED IT
+        // REDUCTION PART 1
+        int reductionGroups = Mathf.CeilToInt(mapLength / 256.0f);
+        ComputeBuffer minMaxBuffer = new ComputeBuffer(reductionGroups, 8); // 8 bytes per float2
+        minMaxBuffer.SetData(new float2[reductionGroups]);
+        pendingRelease.Add(minMaxBuffer);
+
+        reductionShader.SetBuffer(0, HeightMapBuffer, heightMap);
+        reductionShader.SetBuffer(0, MinMax, minMaxBuffer);
+        reductionShader.SetInt(NumVertices, mapLength);
+        reductionShader.Dispatch(0, reductionGroups, 1, 1);
+
+        // REDUCTION PART 2
+        // Now that there are less than 256 groups, we can reduce that down to one
+        // Note that this would not be the case if the map resolution were above 4096, but that's far higher than the user can go
+        ComputeBuffer finalMinMax = new ComputeBuffer(1, 8);
+        finalMinMax.SetData(new float2[1]);
+        pendingRelease.Add(finalMinMax);
+        
+        reductionShader.SetBuffer(1, MinMaxInput, minMaxBuffer);
+        reductionShader.SetBuffer(1, MinMaxResult, finalMinMax);
+        reductionShader.Dispatch(1,1,1,1);
+        
+        // NORMALIZATION
         normalizationShader.SetBuffer(0, HeightMapBuffer, heightMap);
-        normalizationShader.SetBuffer(0, RangeValues, rangeValues);
+        normalizationShader.SetBuffer(0, RangeValues, finalMinMax);
         normalizationShader.SetInt(NumVertices, mapLength);
         normalizationShader.SetFloat(HeightMultiplier, heightMultiplier);
+        normalizationShader.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
         
-        // Dispatch then fetch data
-        //normalizationShader.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
-
+        // MESH SMOOTHING
         if (smoothingPasses > 0)
         {
             ComputeBuffer readBuffer = heightMap;
             ComputeBuffer writeBuffer = new ComputeBuffer(mapLength, 4);
+            writeBuffer.SetData(new float[mapLength]);
             pendingRelease.Add(writeBuffer);
 
             smoothShader.SetInt(Resolution, mapResolution);
-
-
-            // ToDO: could likely do heightMultiplier here instead if I wanted to
+            
             while (smoothingPasses > 0)
             {
                 smoothShader.SetBuffer(0, ReadBuffer, readBuffer);
@@ -152,16 +169,16 @@ public class Noise : MonoBehaviour
 
             heightMap = readBuffer;
         }
-        
+
         callback(heightMap);
     }
 
 
     #region Depreciated
-    
+
     // Version of this function where we offload work to the gpu
     public float[] ComputeHeightMap(int mapWidth, int mapHeight, int seed, float scale, int octaves,
-        float persistence, float lacunarity, Vector2 offset, int noiseType, float warpStrength, float warpFreq, int smoothingPasses)
+    float persistence, float lacunarity, Vector2 offset, int noiseType, float warpStrength, float warpFreq, int smoothingPasses)
     {
         // Set seed so this will be consistent
         Random.InitState(seed);
@@ -269,76 +286,76 @@ public class Noise : MonoBehaviour
         heightMap.Release();
         mid.Release();
 
-        
+
         return map;
     }
-    
-    
+
+
     // Version of this function that is completely on the cpu
     public static float[,] GenerateNoiseMap(int mapWidth, int mapHeight, int seed, float scale, int octaves,
-        float persistence, float lacunarity, Vector2 offset)
+    float persistence, float lacunarity, Vector2 offset)
     {
-        float[,] noiseMap = new float[mapWidth, mapHeight];
-        Random.InitState(seed);
-        
-        Vector2[] offsets = new Vector2[octaves];
-        for (int i = 0; i < octaves; i++)
-        {
-            offsets[i] = new Vector2(Random.Range(-100000, 100000) + offset.x, Random.Range(-100000, 100000) + offset.y);
-        }
+    float[,] noiseMap = new float[mapWidth, mapHeight];
+    Random.InitState(seed);
 
-        Vector2 midPoint = new(mapWidth / 2.0f, mapHeight / 2.0f);
-        
-        // For normalization
-        maxHeight = float.MinValue;
-        minHeight = float.MaxValue;
-        
-        
-        for (int x = 0; x < mapWidth; x++)
-        {
-            for (int y = 0; y < mapHeight; y++)
-            {
-                float amplitude = 1;
-                float frequency = 1;
-                float noiseHeight = 0;
-                
-                for (int i = 0; i < octaves; i++)
-                {
-                    // Offset parallaxes the noise
-                    //float sampleX = (x-midPoint.x) / scale * frequency - offsets[i].x;
-                    //float sampleY = (y-midPoint.y) / scale * frequency - offsets[i].y;
-                    
-                    // true offset
-                    float sampleX = ((x-midPoint.x) / scale + offsets[i].x) * frequency;
-                    float sampleY = ((y-midPoint.y) / scale + offsets[i].y) * frequency;
-        
-                    // Ranges from -1 to 1
-                    float perlinValue = Mathf.PerlinNoise(sampleX, sampleY) * 2 - 1;
-                    
-                    noiseHeight += perlinValue * amplitude;
-                    amplitude *= persistence;
-                    frequency *= lacunarity;
-                }
-
-                // For normalization
-                maxHeight = Mathf.Max(maxHeight, noiseHeight);
-                minHeight = Mathf.Min(minHeight, noiseHeight);
-
-                noiseMap[x, y] = noiseHeight;
-            }
-        }
-        
-        // Normalization: all values in map should be between 0 and 1
-        for (int x = 0; x < mapWidth; x++)
-        {
-            for (int y = 0; y < mapHeight; y++)
-            {
-                noiseMap[x, y] = Mathf.InverseLerp(minHeight, maxHeight, noiseMap[x, y]);
-            }
-        }
-
-        return noiseMap;
+    Vector2[] offsets = new Vector2[octaves];
+    for (int i = 0; i < octaves; i++)
+    {
+        offsets[i] = new Vector2(Random.Range(-100000, 100000) + offset.x, Random.Range(-100000, 100000) + offset.y);
     }
-    
+
+    Vector2 midPoint = new(mapWidth / 2.0f, mapHeight / 2.0f);
+
+    // For normalization
+    maxHeight = float.MinValue;
+    minHeight = float.MaxValue;
+
+
+    for (int x = 0; x < mapWidth; x++)
+    {
+        for (int y = 0; y < mapHeight; y++)
+        {
+            float amplitude = 1;
+            float frequency = 1;
+            float noiseHeight = 0;
+
+            for (int i = 0; i < octaves; i++)
+            {
+                // Offset parallaxes the noise
+                //float sampleX = (x-midPoint.x) / scale * frequency - offsets[i].x;
+                //float sampleY = (y-midPoint.y) / scale * frequency - offsets[i].y;
+
+                // true offset
+                float sampleX = ((x-midPoint.x) / scale + offsets[i].x) * frequency;
+                float sampleY = ((y-midPoint.y) / scale + offsets[i].y) * frequency;
+
+                // Ranges from -1 to 1
+                float perlinValue = Mathf.PerlinNoise(sampleX, sampleY) * 2 - 1;
+
+                noiseHeight += perlinValue * amplitude;
+                amplitude *= persistence;
+                frequency *= lacunarity;
+            }
+
+            // For normalization
+            maxHeight = Mathf.Max(maxHeight, noiseHeight);
+            minHeight = Mathf.Min(minHeight, noiseHeight);
+
+            noiseMap[x, y] = noiseHeight;
+        }
+    }
+
+    // Normalization: all values in map should be between 0 and 1
+    for (int x = 0; x < mapWidth; x++)
+    {
+        for (int y = 0; y < mapHeight; y++)
+        {
+            noiseMap[x, y] = Mathf.InverseLerp(minHeight, maxHeight, noiseMap[x, y]);
+        }
+    }
+
+    return noiseMap;
+    }
+
     #endregion
 }

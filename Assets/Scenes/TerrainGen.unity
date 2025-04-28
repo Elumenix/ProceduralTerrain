@@ -840,7 +840,6 @@ MonoBehaviour:
   meshCreator: {fileID: 2100000, guid: 6230ec73badf3f04fb216f883cc6fdd3, type: 2}
   meshGenShader: {fileID: 7200000, guid: 4e2bd1e6d165b4745b976030b7d70f71, type: 3}
   erosionShader: {fileID: 7200000, guid: 9a2b9e1704516344dac6b9576fec7c54, type: 3}
-  normalShader: {fileID: 7200000, guid: 21beadbe02f4b76448f075a1d89d246c, type: 3}
   indexShader: {fileID: 7200000, guid: 4f3f3546b120fe744adf38458a45f75e, type: 3}
   skipErosion: 0
   numRainDrops: 300000
@@ -4104,6 +4103,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   noiseShader: {fileID: 7200000, guid: 8503da4403ce6504f85489be90c5836e, type: 3}
+  reductionShader: {fileID: 7200000, guid: ee9ca7cdc32cc084a98bc5e6730b0b64, type: 3}
   normalizationShader: {fileID: 7200000, guid: a2b97f87b5ab66d40b52d6251fd15cee, type: 3}
   smoothShader: {fileID: 7200000, guid: b94b9f4f523d316489d55820438a0751, type: 3}
 --- !u!4 &745453630
@@ -9342,7 +9342,7 @@ MonoBehaviour:
   m_HandleRect: {fileID: 1175801455}
   m_Direction: 0
   m_MinValue: 1
-  m_MaxValue: 1048
+  m_MaxValue: 1024
   m_WholeNumbers: 1
   m_Value: 512
   m_OnValueChanged:

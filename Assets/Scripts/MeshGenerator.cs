@@ -269,6 +269,7 @@ public class MeshGenerator : MonoBehaviour
         
         // This will hold vertices, uvs, and the modified heightmap
         vertexDataBuffer = new ComputeBuffer(mapLength, 32);
+        vertexDataBuffer.SetData(new VertexData[mapLength]);
         activeBuffers.Add(vertexDataBuffer);
         
         meshGenShader.SetBuffer(0, VertexDataBuffer, vertexDataBuffer);
@@ -284,6 +285,7 @@ public class MeshGenerator : MonoBehaviour
         int numQuads = dim * dim;
         int numIndices = numQuads * 6;
         indexBuffer = new ComputeBuffer(numIndices, 4);
+        indexBuffer.SetData(new int[numIndices]);
         activeBuffers.Add(indexBuffer);
         
         // Set Shader data

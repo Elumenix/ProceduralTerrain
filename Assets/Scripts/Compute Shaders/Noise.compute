@@ -25,7 +25,6 @@ struct OctaveParams
 };
 
 // Buffers
-RWStructuredBuffer<float> _RangeValues; // For normalization. {min, max}
 RWStructuredBuffer<float> _HeightMapBuffer; // Everything is set to 0 before this runs
 StructuredBuffer<OctaveParams> _OctaveBuffer;
 
@@ -75,19 +74,5 @@ void CSMain (uint3 id : SV_DispatchThreadID)
         // Add a scaled value based on amplitude.
         // Range of returned values is insignificant because they will be normalized later
         _HeightMapBuffer[index] += SAMPLE_NOISE(newPos) * _OctaveBuffer[i].amplitude;
-    }
-
-    
-    float value = _HeightMapBuffer[index];
-    
-    // I'm essentially trying to mimic an atomic operation here since webGPU doesn't support it
-    // While I wouldn't care it other compute shaders, this prevents a lot of cpu work and recreation of the noise buffer
-    while (value < _RangeValues[0])
-    {
-        _RangeValues[0] = value;
-    }
-    while (value > _RangeValues[1])
-    {
-        _RangeValues[1] = value;
     }
 }
