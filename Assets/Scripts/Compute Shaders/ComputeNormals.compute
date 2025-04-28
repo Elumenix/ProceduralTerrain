@@ -12,9 +12,8 @@ struct VertexData
 // Buffers
 RWStructuredBuffer<VertexData> _VertexDataBuffer;
 StructuredBuffer<float> _HeightBuffer;
-StructuredBuffer<int> _Marker; // This is a single int. This buffer is only used as a miniscule readBack to confirm completion
 uint numVertices;
-int2 dimension; // {mapWidth, mapHeight}, based on number of faces, not vertices
+int resolution; // Map Width/Height : based on number of faces, not vertices
 
 [numthreads(64,1,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
@@ -25,7 +24,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     _VertexDataBuffer[id.x].position[1] = _HeightBuffer[id.x];
     float3 currentVertex = _VertexDataBuffer[id.x].position;
 
-    int width = dimension[0] + 1;
+    int width = resolution + 1;
     int x = id.x % width;
     int y = id.x / width;
     float3 normalSum = float3(0, 0, 0);
@@ -73,7 +72,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     }
 
     // Quad 2: Top-right
-    if (x < dimension[0] && y > 0)
+    if (x < resolution && y > 0)
     {
         // Triangle 1: Current -> Top -> Right
         float3 AB = top - currentVertex;
@@ -87,7 +86,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     }
 
     // Quad 3: Bottom-right
-    if (x < dimension[0] && y < dimension[1])
+    if (x < resolution && y < resolution)
     {
         // Triangle 1: Current -> Right -> Bottom
         float3 AB = right - currentVertex;
@@ -101,7 +100,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     }
 
     // Quad 4: Bottom-left
-    if (x > 0 && y < dimension[1])
+    if (x > 0 && y < resolution)
     {
         // Triangle 1: Current -> Bottom -> Left
         float3 AB = bottom - currentVertex;

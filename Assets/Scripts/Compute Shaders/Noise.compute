@@ -31,7 +31,6 @@ StructuredBuffer<OctaveParams> _OctaveBuffer;
 
 // Global Variables
 float2 midPoint; // To make scale happen from the center.
-//uint numVertices;
 uint mapWidth;
 uint octaves;
 float scaleFactor;

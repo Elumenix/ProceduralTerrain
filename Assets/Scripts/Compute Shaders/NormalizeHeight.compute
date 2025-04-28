@@ -7,10 +7,12 @@ StructuredBuffer<float> _RangeValues; // This is essentially float2 {min, max}
 
 // Global Variables
 uint numVertices;
+float heightMultiplier;
+
 
 float InverseLerp(float minHeight, float maxHeight, float value)
 {
-    return (value - minHeight) / (maxHeight - minHeight);
+    return ((value - minHeight) / (maxHeight - minHeight)) * heightMultiplier;
 }  
 
 // The main point of this compute shader is just to normalize the heights of vertices to be between 0 and 1

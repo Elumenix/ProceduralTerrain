@@ -771,8 +771,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   noise: {fileID: 745453629}
   drawMode: 3
-  mapWidth: 512
-  mapHeight: 512
+  resolution: 512
   heightMultiplier: 20
   noiseScale: 0.3
   octaves: 7

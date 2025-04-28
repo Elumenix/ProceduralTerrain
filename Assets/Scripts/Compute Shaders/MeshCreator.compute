@@ -15,9 +15,8 @@ RWStructuredBuffer<VertexData> _VertexDataBuffer;
 
 // Variables
 uint numVertices;
-uint2 dimension; // {mapWidth, mapHeight} Based on number of faces, not number of vertices
-float heightMultiplier;
-float2 scale; 
+uint resolution; // mapWidth : Based on number vertices
+float scale; 
 
 
 [numthreads(64,1,1)]
@@ -26,20 +25,11 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     if (id.x >= numVertices) return; // Don't need to iterate on
 
     // find x/z position on the map
-    int x = id.x % (dimension[0] + 1);
-    int z = id.x / (dimension[0] + 1);
+    int x = id.x % resolution;
+    int z = id.x / resolution;
 
     // Update relevant data for each vertex
-    float newHeight = _HeightMap[id.x] * heightMultiplier; // Add curve here if wanted
-    _VertexDataBuffer[id.x].position = float3(x * scale.x, newHeight, z * scale.y);
-    _VertexDataBuffer[id.x].u = x * scale.x; // World Space UV
-    _VertexDataBuffer[id.x].v = z * scale.y; // World Space UV
-    _HeightMap[id.x] = newHeight;
-
-
-    // Previous/Past options to help with understanding
-    //_VertexBuffer[id.x] = float3(x * _Scale[0], /*heightCurve.Evaluate(_HeightMap[id.x])*/ newHeight, z * _Scale[1]);
-    //_UVBuffer[id.x] = float2(x * _Scale[0], z * _Scale[1]); // World space Uv's
-    //_UVBuffer[id.x] = float2(x / (float)_Dimension[0], z / (float)_Dimension[1]); //normalized Uv's
-    //colorMap[i] = Color.Lerp(Color.black, Color.white, heightMap[i]);
+    _VertexDataBuffer[id.x].position = float3(x * scale, _HeightMap[id.x], z * scale);
+    _VertexDataBuffer[id.x].u = x * scale; // World Space UV
+    _VertexDataBuffer[id.x].v = z * scale; // World Space UV
 }

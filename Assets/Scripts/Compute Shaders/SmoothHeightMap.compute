@@ -1,37 +1,35 @@
 #pragma kernel CSMain
 
-RWStructuredBuffer<float> _SmoothedHeightMap;
-StructuredBuffer<float> _OriginalHeightMap;
-uint2 dimension;
+RWStructuredBuffer<float> _ReadBuffer;
+RWStructuredBuffer<float> _WriteBuffer;
+uint resolution;
 
-[numthreads(8,8,1)]
+// helper
+static int2 bounds = int2(resolution - 1, resolution - 1);
+
+[numthreads(16,16,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
-    if (id.x >= dimension.x || id.y >= dimension.y)
-        return;
-
-    int x = id.x;
-    int y = id.y;
-    int index = y * dimension.x + x;
-
-    float sum = 0.0f;
+    // Out of bounds
+    if (id.x >= resolution || id.y >= resolution) return;
+    
+    // Establishing Variables
+    int index = id.y * resolution + id.x;
+    float sum = 0;
     int count = 0;
 
-    // 5x5 neighborhood
+    // Calculate the weight of everything in a 5x5 area
     for (int dy = -2; dy <= 2; dy++)
     {
         for (int dx = -2; dx <= 2; dx++)
         {
-            int nx = x + dx;
-            int ny = y + dy;
-
-            if (nx >= 0 && (uint)nx < dimension.x && ny >= 0 && (uint)ny < dimension.y)
-            {
-                sum += _OriginalHeightMap[ny * dimension.x + nx];
-                count++;
-            }
+            int2 pos = id.xy + int2(dx, dy);
+            pos = clamp(pos, int2(0,0), bounds);
+            sum += _ReadBuffer[pos.y * resolution + pos.x];
+            count++;
         }
     }
 
-    _SmoothedHeightMap[index] = sum / count;
+    // Write to the output buffer
+    _WriteBuffer[index] = sum / count;
 }

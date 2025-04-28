@@ -14,7 +14,7 @@ RWStructuredBuffer<float> _HeightBuffer; // working with floats is easier and mo
 uint numVertices;
 uint radius;
 uint _seed;
-int2 dimension; // {mapWidth, mapHeight} Refers to number of faces, not vertices 
+int resolution; // width & height (Number of faces, not vertices
 float inertia;
 float maxSediment;
 float depositionRate;
@@ -24,16 +24,20 @@ float gravity;
 float minSlope;
 
 // Precomputed constants
-static const float2 dimensionF = float2(dimension);
-static const float verticesPerRow = dimension.x + 1;
+static const float resolutionF = float(resolution);
+static const float verticesPerRow = resolution + 1;
 static const float fRadius = (float)radius + .001; // Needs to prevent division by 0
+// Approximation for the weight of all points within the radius of any arbitrary point
+// This is a huge optimization over looping every nearby point, and eliminates the need for two passes
+// This also assumes there would be more points beyond the edge of the map, which is what I want to imply in this implementation
+static const float invNorm = 1.0f / (3.14169265 * pow(fRadius,3) / 3.0f);
 
 float3 GetGradientAndHeight(float2 pos)
 {
     // Position clamping to a valid edge implies there is terrain outside the edge of the map that is a same height
     // Get row/column of top left index of (square) face
-    int col = clamp((int)pos.x, 0, dimension.x);
-    int row = clamp((int)pos.y, 0, dimension.y);
+    int col = clamp((int)pos.x, 0, resolution);
+    int row = clamp((int)pos.y, 0, resolution);
     const int index = row * verticesPerRow + col;
 
     // Get height of all vertices of square
@@ -78,7 +82,7 @@ void SimulateDrop(int x, int y)
         // We shouldn't continue if the starting position of the drop for this step is already off the map
         // Drops exactly on the right or bottom border should also be considered off because the gradient would consider them at an out-of-bounds cell
         if (any(position < 0.0f)) return;
-        if (any(position >= dimensionF)) return;
+        if (any(position >= resolutionF)) return;
         
         // Get location variables
         const float3 g = GetGradientAndHeight(position);
@@ -140,49 +144,26 @@ void SimulateDrop(int x, int y)
 
             // Reduce erosion based on how close we are to the map edge, starting at a radius length away
             // The point of this is to prevent massive ravines forming at the edge of the map as a result of drop pooling
-            const float edgeX = min(position.x, dimensionF.x - position.x);
-            const float edgeY = min(position.y, dimensionF.y - position.y);
+            const float edgeX = min(position.x, resolutionF - position.x);
+            const float edgeY = min(position.y, resolutionF - position.y);
             const float edgeFactor = clamp(min(edgeX, edgeY) / fRadius, 0.0f, 1.0f);
             erosionAmount *= edgeFactor;
 
             // We take full amount as we can't track info for out-of-bounds vertices
             sediment += erosionAmount; 
-
-            // We initially include invalid vertices so that weighting isn't heavy on ones inside the map
-            // This should help give the illusion that the terrain continues outside the map
-            int minC = (int)floor(position.x - fRadius);
-            int maxC = (int)ceil(position.x + fRadius);
-            int minR = (int)floor(position.y - fRadius);
-            int maxR = (int)ceil(position.y + fRadius);
-
-            float norm = 0.0f;
-            int r,c;
             
-            // First pass, which finds the normalization factor
-            for (r = minR; r <= maxR; r++)
-            {
-                for (c = minC; c <= maxC; c++)
-                {
-                    const float d = distance(position, float2(c, r));
-
-                    if (d <= fRadius)
-                    {
-                        norm += radius - d;
-                    }
-                }
-            }
 
             // We're now only checking valid vertices
-            minC = max(0, minC);
-            maxC = min(dimension.x, maxC);
-            minR = max(0, minR);
-            maxR = min(dimension.y, maxR);
-            const float invNorm = 1.0f / norm;
+            const int minC = max(0, (int)floor(position.x - fRadius));
+            const int maxC = min(resolution, (int)ceil(position.x + fRadius));
+            const int minR = max(0, (int)floor(position.y - fRadius));
+            const int maxR = min(resolution, (int)ceil(position.y + fRadius));
+            
 
             // Second pass actually lowers terrain based on erosionAmount and weight of points
-            for (r = minR; r <= maxR; r++)
+            for (int r = minR; r <= maxR; r++)
             {
-                for (c = minC; c <= maxC; c++)
+                for (int c = minC; c <= maxC; c++)
                 {
                     const int index = r * verticesPerRow + c;
                     const float d = length(position - float2(c, r));
@@ -226,8 +207,8 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     uint hashVal = PCG(_seed + id.x);
 
     // Put seed within terrain boundaries, excluding right and bottom edges
-    int x = hashVal % dimension.x; // Upper bits for x position
-    int y = (hashVal >> 16) % dimension.y; // Lower Bits for y position
+    int x = hashVal % resolution; // Upper bits for x position
+    int y = (hashVal >> 16) % resolution; // Lower Bits for y position
 
     // Converting to an index and starting the drop at that index
     SimulateDrop(x, y);

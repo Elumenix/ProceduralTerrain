@@ -6,9 +6,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using Unity.Mathematics;
 using UnityEngine;
-using UnityEngine.Profiling;
 using UnityEngine.Rendering;
-using Debug = UnityEngine.Debug;
 using Random = UnityEngine.Random;
 
 public class Noise : MonoBehaviour
@@ -39,7 +37,11 @@ public class Noise : MonoBehaviour
     private static readonly int OriginalHeightMap = Shader.PropertyToID("_OriginalHeightMap");
     private static readonly int SmoothedHeightMap = Shader.PropertyToID("_SmoothedHeightMap");
     private static readonly int OctaveBuffer = Shader.PropertyToID("_OctaveBuffer");
-    private static readonly int Dimension = Shader.PropertyToID("dimension");
+    private static readonly int HeightMultiplier = Shader.PropertyToID("heightMultiplier");
+    private static readonly int Resolution = Shader.PropertyToID("resolution");
+    private static readonly int Passes = Shader.PropertyToID("passes");
+    private static readonly int ReadBuffer = Shader.PropertyToID("_ReadBuffer");
+    private static readonly int WriteBuffer = Shader.PropertyToID("_WriteBuffer");
 
 
     [StructLayout(LayoutKind.Sequential)]
@@ -51,22 +53,24 @@ public class Noise : MonoBehaviour
     }
     
     // Version of this function where we use the gpu asynchronously, which is required for Unity WebGPU beta
-    public void ComputeHeightMap(int mapWidth, int mapHeight, Unity.Mathematics.Random _random, float scale,
+    public void ComputeHeightMap(int mapResolution, Unity.Mathematics.Random _random, float scale,
         int octaves, float persistence, float lacunarity, float2 offset, int noiseType, float warpStrength,
-        float warpFreq, int smoothingPasses, List<ComputeBuffer> toRelease, Action<ComputeBuffer> callback)
+        float warpFreq, int smoothingPasses, float heightMultiplier, List<ComputeBuffer> pendingRelease, Action<ComputeBuffer> callback)
     {
-        int mapLength = mapWidth * mapHeight;
+        int mapLength = mapResolution * mapResolution;
+        int threadGroups = Mathf.CeilToInt(mapResolution / 16.0f);
+
 
         // Will be used for normalization later
         // This is essentially our atomic buffer, where we will get the min/max height of every element 
         ComputeBuffer rangeValues = new ComputeBuffer(2, 4);
         rangeValues.SetData(new[] {float.MaxValue, float.MinValue});
-        toRelease.Add(rangeValues);
+        pendingRelease.Add(rangeValues);
 
 
         // Set Actual heightMap to buffer
         ComputeBuffer heightMap = new ComputeBuffer(mapLength, 4);
-
+        pendingRelease.Add(heightMap);
 
 
         // Precompute octave parameters to make shader more efficient
@@ -80,20 +84,19 @@ public class Noise : MonoBehaviour
 
         ComputeBuffer octaveBuffer = new ComputeBuffer(octaves, 16);
         octaveBuffer.SetData(octParams);
-        toRelease.Add(octaveBuffer);
-
+        pendingRelease.Add(octaveBuffer);
 
         // Set Buffers and variables
         noiseShader.SetBuffer(0, RangeValues, rangeValues);
         noiseShader.SetBuffer(0, HeightMapBuffer, heightMap);
         noiseShader.SetBuffer(0, OctaveBuffer, octaveBuffer);
         //noiseShader.SetInt(NumVertices, mapLength);
-        noiseShader.SetInt(MapWidth, mapWidth);
+        noiseShader.SetInt(MapWidth, mapResolution);
         noiseShader.SetInt(Octaves, octaves);
-        noiseShader.SetFloat(ScaleFactor, scale * mapWidth); // Scale is multiplied by mapWidth for consistency
+        noiseShader.SetFloat(ScaleFactor, scale * mapResolution); // Scale is multiplied by mapWidth for consistency
         noiseShader.SetFloat(WarpStrength, warpStrength);
         noiseShader.SetFloat(WarpFrequency, warpFreq);
-        noiseShader.SetFloats(MidPoint, new float[] {mapWidth / 2f, mapHeight / 2f});
+        noiseShader.SetFloats(MidPoint, new float[] {mapResolution / 2.0f, mapResolution / 2.0f});
 
         // Set Noise Type
         noiseShader.DisableKeyword("_PERLIN");
@@ -113,58 +116,46 @@ public class Noise : MonoBehaviour
         }
         
         // Dispatch
-        noiseShader.Dispatch(0, Mathf.CeilToInt(mapWidth / 16f), Mathf.CeilToInt(mapWidth / 16f), 1);
+        noiseShader.Dispatch(0, threadGroups, threadGroups, 1);
 
-        // TODO: Make sure Range Values is giving the proper values, I'm seeing some weird things in map generation
-        
-        /*AsyncGPUReadback.Request(rangeValues, request =>
-        {
-            float[] range = request.GetData<float>().ToArray();
-            
-            Debug.Log(range[0] + "  " + range[1]);
-        });*/
         
         // Set Data for height normalization shader
         normalizationShader.SetBuffer(0, HeightMapBuffer, heightMap);
         normalizationShader.SetBuffer(0, RangeValues, rangeValues);
         normalizationShader.SetInt(NumVertices, mapLength);
+        normalizationShader.SetFloat(HeightMultiplier, heightMultiplier);
         
         // Dispatch then fetch data
-        normalizationShader.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1); // Set Data for height normalization shader
-        
-        
-        // Set up additional Buffers in case we need to go through smoothing passes, If we do, we'll need to clean an additional buffer
-        ComputeBuffer finalBuffer = heightMap;
-        
-        // Do we even bother with smoothing pass logic
+        normalizationShader.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
+
         if (smoothingPasses > 0)
         {
-            ComputeBuffer resultBuffer = new ComputeBuffer(mapLength, 4);
-            int[] dim = { mapWidth, mapHeight };
-            smoothShader.SetInts(Dimension, dim);
-            
-            // Do all passes before parsing data
-            for (int i = 0; i < smoothingPasses; i++)
+            ComputeBuffer readBuffer = heightMap;
+            ComputeBuffer writeBuffer = new ComputeBuffer(mapLength, 4);
+            pendingRelease.Add(writeBuffer);
+
+            smoothShader.SetInt(Resolution, mapResolution);
+
+
+            // ToDO: could likely do heightMultiplier here instead if I wanted to
+            while (smoothingPasses > 0)
             {
-                smoothShader.SetBuffer(0, OriginalHeightMap, heightMap);
-                smoothShader.SetBuffer(0, SmoothedHeightMap, resultBuffer);
-                smoothShader.Dispatch(0, Mathf.CeilToInt(mapWidth / 8f), Mathf.CeilToInt(mapHeight / 8f), 1);
-            
-                // Swap buffers for the next pass
-                (heightMap, resultBuffer) = (resultBuffer, heightMap);
+                smoothShader.SetBuffer(0, ReadBuffer, readBuffer);
+                smoothShader.SetBuffer(0, WriteBuffer, writeBuffer);
+                smoothShader.Dispatch(0, threadGroups, threadGroups, 1);
+
+                // Swap Buffers so that readBuffer hold proper data (sets up next pass and return)
+                // Buffers are essentially just pointers, so this is safe and not corrupting data
+                (readBuffer, writeBuffer) = (writeBuffer, readBuffer);
+
+                smoothingPasses--;
             }
 
-            finalBuffer = heightMap;
-            toRelease.Add(resultBuffer);
-            toRelease.Add(heightMap);
+            heightMap = readBuffer;
         }
-        else
-        {
-            toRelease.Add(heightMap);
-        }
-        
-        // Pass heightMap back to MeshGenerator
-        callback(finalBuffer);
+
+
+        callback(heightMap);
     }
 
 
