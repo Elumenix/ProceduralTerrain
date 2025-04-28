@@ -66,7 +66,6 @@ public class MeshGenerator : MonoBehaviour
     // Compute Shader Data
     public ComputeShader meshGenShader;
     public ComputeShader erosionShader;
-    public ComputeShader normalShader;
     public ComputeShader indexShader;
     private ComputeBuffer heightMap;
     private ComputeBuffer vertexDataBuffer;
@@ -105,12 +104,10 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int IndexBuffer = Shader.PropertyToID("_IndexBuffer");
     private static readonly int QuadWidth = Shader.PropertyToID("quadWidth");
     private static readonly int NumQuads = Shader.PropertyToID("numQuads");
-    private static readonly int Marker = Shader.PropertyToID("_Marker");
     private static readonly int Resolution = Shader.PropertyToID("resolution");
     private static readonly int Scale = Shader.PropertyToID("scale");
     private static readonly int HeightMap = Shader.PropertyToID("_HeightMap"); 
     private static readonly int HeightBuffer = Shader.PropertyToID("_HeightBuffer");
-    private static readonly int HeightMultiplier = Shader.PropertyToID("heightMultiplier");
     
     // String search optimization for Erosion
     private static readonly int NumVertices = Shader.PropertyToID("numVertices"); 
@@ -196,16 +193,7 @@ public class MeshGenerator : MonoBehaviour
     }
 
 
-    // This is mainly for testing in edit mode, It shouldn't be called at runtime
-    /*private void OnValidate()
-    {
-        Camera.main!.depthTextureMode = DepthTextureMode.Depth;
-        if (mapWidth < 1) mapWidth = 1;
-        if (mapHeight < 1) mapHeight = 1;
-        if (heightMultiplier < 0) heightMultiplier = 0;
-        if (noiseScale <= 0) noiseScale = 0.0011f;
-        if (lacunarity < 1) lacunarity = 1;
-    }*/
+
     
     // Uv is being split up to facilitate proper byte alignment
     // Sends 32 bytes instead of 48, which is huge for how large this buffer will be
@@ -245,22 +233,21 @@ public class MeshGenerator : MonoBehaviour
                 // Set Shared variable
                 meshGenShader.SetInt(NumVertices, mapLength);
                 erosionShader.SetInt(NumVertices, mapLength);
-                normalShader.SetInt(NumVertices, mapLength);
                 meshGenShader.SetInt(Resolution, dim + 1);
                 erosionShader.SetInt(Resolution, dim);
-                normalShader.SetInts(Resolution, dim);
                 
-                // TODO: make erosion first then combine normals with making mesh
-                // Step 2: Create the Mesh
-                CreateMeshGPU(); 
-                
-                // Step 3: Simulate Erosion
+                // Step 2: Simulate Erosion
+                // Raindrops will be simulated on the terrain. This directly modifies the heightMap
                 ComputeErosion();
-                    
-                // Step 4: Recalculate normals to make sure lighting works correctly
-                RecalculateNormals();
                 
-                AsyncGPUReadback.WaitAllRequests();
+                // Step 3: Generate Indices
+                // Needs to be done separate from mesh creation, and doesn't use heightMap, so it helps a bit with synchronization
+                GenerateIndices();
+                
+                
+                // Step 4: Generate Mesh Data
+                // Creates a new buffer to hold mesh data that we'll use in the drawing shader. Only Reads the heightMap
+                CreateMeshGPU();
         
                 // Release all buffers that no longer need to be used
                 foreach (ComputeBuffer buffer in pendingRelease)
@@ -269,21 +256,10 @@ public class MeshGenerator : MonoBehaviour
                 }
                 pendingRelease.Clear();
         
-                // Confirm that a new map can be generated
+                // Confirm that a new map can be generated next frame if dirty
                 isGenerating = false;
             }
         );
-    }
-
-    private void RecalculateNormals()
-    {
-        // Now that all vertices are in their final positions, we want to calculate the normals of the mesh ourselves
-        // This is because unity's innate RecalculateMeshNormals() isn't tuned for the sometimes steep slopes of 
-        // terrain and causes visible artifacts. It's also likely faster to iterate over large meshes on the gpu.
-        normalShader.SetBuffer(0, VertexDataBuffer, vertexDataBuffer);
-        normalShader.SetBuffer(0, HeightBuffer, heightMap);
-
-        normalShader.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
     }
     
     private void CreateMeshGPU()
@@ -297,18 +273,9 @@ public class MeshGenerator : MonoBehaviour
         
         meshGenShader.SetBuffer(0, VertexDataBuffer, vertexDataBuffer);
         meshGenShader.SetBuffer(0, HeightMap, heightMap);
-
-        
-        
-        // TODO: Would it be better to pass this to noise compute shaders rather than mesh creation?
-        // Pass Variables
         
         // Dispatch Shader
         meshGenShader.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
-        
-        // Generating indices is the only major calculation on the cpu instead of the gpu where I may be handling 
-        // hundreds of thousands of data points, so I'm using Burst + Jobs to speed it up
-        GenerateIndices();
     }
 
     void GenerateIndices()

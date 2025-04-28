@@ -10,7 +10,7 @@ struct VertexData
 };
 
 // Buffers
-RWStructuredBuffer<float> _HeightMap;
+StructuredBuffer<float> _HeightMap;
 RWStructuredBuffer<VertexData> _VertexDataBuffer;
 
 // Variables
@@ -18,18 +18,93 @@ uint numVertices;
 uint resolution; // mapWidth : Based on number vertices
 float scale; 
 
-
+// The majority of this Compute Shader is just calculations to get the normal for the current vertex
 [numthreads(64,1,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= numVertices) return; // Don't need to iterate on
 
     // find x/z position on the map
-    int x = id.x % resolution;
-    int z = id.x / resolution;
+    uint x = id.x % resolution;
+    uint z = id.x / resolution;
+    float xPos = x * scale;
+    float zPos = z * scale;
+    
+    float3 currentVertex = float3(xPos, _HeightMap[id.x], zPos);
+    float3 normalSum = float3(0, 0, 0);
 
+    // Precomputing all directions, hopefully makes all threads sync better as they may be used multiple times
+    // Height is based on what may be those vertices heights after erosion, which this shader also updates
+    float3 top = float3(xPos, _HeightMap[id.x - resolution], (z-1) * scale);
+    float3 left = float3((x-1) * scale, _HeightMap[id.x - 1], zPos);
+    float3 right = float3((x+1) * scale, _HeightMap[id.x + 1], zPos);
+    float3 bottom = float3(xPos, _HeightMap[id.x + resolution], (z+1) * scale);
+    float3 topLeft = float3((x-1) * scale, _HeightMap[id.x - resolution - 1], (z-1) * scale);
+    float3 topRight = float3((x+1) * scale, _HeightMap[id.x - resolution + 1], (z-1) * scale);
+    float3 bottomLeft = float3((x-1) * scale, _HeightMap[id.x + resolution - 1], (z+1) * scale);
+    float3 bottomRight = float3((x+1) * scale, _HeightMap[id.x + resolution + 1], (z+1) * scale);
+
+    
+    // Check 4 adjacent quads (6 triangles total)
+    // Quad 1: Top-left
+    if (x > 0 && z > 0)
+    {
+        // Triangle 1: Current -> Left -> Top
+        float3 AB = left - currentVertex;
+        float3 AC = top - currentVertex;
+        normalSum += cross(AC, AB); // Unity left-handed
+        
+        // Triangle 2: Left -> TopLeft -> Top
+        AB = topLeft - left;
+        AC = top - left;
+        normalSum += cross(AC, AB);
+    }
+
+    // Quad 2: Top-right
+    if (x < resolution && z > 0)
+    {
+        // Triangle 1: Current -> Top -> Right
+        float3 AB = top - currentVertex;
+        float3 AC = right - currentVertex;
+        normalSum += cross(AC, AB);
+        
+        // Triangle 2: Top -> TopRight -> Right
+        AB = topRight - top;
+        AC = right - top;
+        normalSum += cross(AC, AB);
+    }
+
+    // Quad 3: Bottom-right
+    if (x < resolution && z < resolution)
+    {
+        // Triangle 1: Current -> Right -> Bottom
+        float3 AB = right - currentVertex;
+        float3 AC = bottom - currentVertex;
+        normalSum += cross(AC, AB);
+        
+        // Triangle 2: Right -> BottomRight -> Bottom
+        AB = bottomRight - right;
+        AC = bottom - right;
+        normalSum += cross(AC, AB);
+    }
+
+    // Quad 4: Bottom-left
+    if (x > 0 && z < resolution)
+    {
+        // Triangle 1: Current -> Bottom -> Left
+        float3 AB = bottom - currentVertex;
+        float3 AC = left - currentVertex;
+        normalSum += cross(AC, AB);
+        
+        // Triangle 2: Bottom -> BottomLeft -> Left
+        AB = bottomLeft - bottom;
+        AC = left - bottom;
+        normalSum += cross(AC, AB);
+    }
+    
     // Update relevant data for each vertex
-    _VertexDataBuffer[id.x].position = float3(x * scale, _HeightMap[id.x], z * scale);
-    _VertexDataBuffer[id.x].u = x * scale; // World Space UV
-    _VertexDataBuffer[id.x].v = z * scale; // World Space UV
+    _VertexDataBuffer[id.x].position = currentVertex;
+    _VertexDataBuffer[id.x].u = xPos; // World Space UV
+    _VertexDataBuffer[id.x].normal = normalize(normalSum);
+    _VertexDataBuffer[id.x].v = zPos; // World Space UV
 }

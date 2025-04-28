@@ -39,7 +39,6 @@ public class Noise : MonoBehaviour
     private static readonly int OctaveBuffer = Shader.PropertyToID("_OctaveBuffer");
     private static readonly int HeightMultiplier = Shader.PropertyToID("heightMultiplier");
     private static readonly int Resolution = Shader.PropertyToID("resolution");
-    private static readonly int Passes = Shader.PropertyToID("passes");
     private static readonly int ReadBuffer = Shader.PropertyToID("_ReadBuffer");
     private static readonly int WriteBuffer = Shader.PropertyToID("_WriteBuffer");
 
@@ -126,7 +125,7 @@ public class Noise : MonoBehaviour
         normalizationShader.SetFloat(HeightMultiplier, heightMultiplier);
         
         // Dispatch then fetch data
-        normalizationShader.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
+        //normalizationShader.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
 
         if (smoothingPasses > 0)
         {
@@ -153,8 +152,7 @@ public class Noise : MonoBehaviour
 
             heightMap = readBuffer;
         }
-
-
+        
         callback(heightMap);
     }
 
