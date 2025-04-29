@@ -125,6 +125,7 @@ public class MeshGenerator : MonoBehaviour
 
     // Using this for inline methods
     public List<Slider> sliders;
+    public Toggle erosionToggle;
 
     void Start()
     {
@@ -142,6 +143,7 @@ public class MeshGenerator : MonoBehaviour
         */
         
         // Hook up sliders to variables, I'm using inline functions because these are really simple and repetitive
+        erosionToggle.onValueChanged.AddListener(val => { skipErosion = !val; isDirty = true; });
         sliders[0].onValueChanged.AddListener(val => { resolution = (int)val; isDirty = true; });
         sliders[1].onValueChanged.AddListener(val => { noiseType = (NoiseType)((int)val); isDirty = true; });
         sliders[2].onValueChanged.AddListener(val => { noiseScale = val / 10.0f; isDirty = true; });
@@ -153,7 +155,16 @@ public class MeshGenerator : MonoBehaviour
         sliders[8].onValueChanged.AddListener(val => { warpFrequency = val; if (warpStrength != 0) {isDirty = true;} });
         sliders[9].onValueChanged.AddListener(val => { smoothingPasses = (int)val; isDirty = true; });
         sliders[10].onValueChanged.AddListener(val => { numRainDrops = (int)val; isDirty = true; });
+        sliders[11].onValueChanged.AddListener(val => { inertia = val; isDirty = true; });
+        sliders[12].onValueChanged.AddListener(val => { sedimentMax = val; isDirty = true; });
+        sliders[13].onValueChanged.AddListener(val => { depositionRate = val; isDirty = true; });
+        sliders[14].onValueChanged.AddListener(val => { evaporationRate = val; isDirty = true; });
+        sliders[15].onValueChanged.AddListener(val => { softness = 1 - val; isDirty = true; });
+        sliders[16].onValueChanged.AddListener(val => { gravity = val; isDirty = true; });
+        sliders[17].onValueChanged.AddListener(val => { radius = (int)val; isDirty = true; });
+        sliders[18].onValueChanged.AddListener(val => { minSlope = val; isDirty = true; });
 
+        
         // Draw with current data on frame 1
         isDirty = true;
     }

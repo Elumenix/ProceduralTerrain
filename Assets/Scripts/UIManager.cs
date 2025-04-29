@@ -1,9 +1,41 @@
+using System;
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
 public class UIManager : MonoBehaviour
 {
+    public List<Button> buttons;
+    public List<GameObject> panels;
+
+    public void Start()
+    {
+        panels[1].SetActive(false);
+        panels[2].SetActive(false);
+
+        buttons[0].onClick.AddListener(() =>
+        {
+            panels[0].SetActive(true);
+            panels[1].SetActive(false);
+            panels[2].SetActive(false);
+        });
+        
+        buttons[1].onClick.AddListener(() =>
+        {
+            panels[0].SetActive(false);
+            panels[1].SetActive(true);
+            panels[2].SetActive(false);
+        });
+        
+        buttons[2].onClick.AddListener(() =>
+        {
+            panels[0].SetActive(false);
+            panels[1].SetActive(false);
+            panels[2].SetActive(true);
+        });
+    }
+
     // Method of handling UI inspired by Sebastian Lague
     // Will be called directly by the sliders
     public void SliderValue (GameObject s) {

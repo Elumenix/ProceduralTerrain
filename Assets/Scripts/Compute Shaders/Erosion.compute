@@ -174,8 +174,8 @@ void SimulateDrop(int x, int y)
                         // Because drop is on the map, vertices will be within the radius, so norm is never 0
                         const float weight = max(0, (fRadius - d) * invNorm);
 
-                        // Erode the terrain by the proper amount. Min prevents vertices from going below 0
-                        _HeightBuffer[index] -= min(erosionAmount * weight, _HeightBuffer[index]);
+                        // Erode the terrain by the proper amount. Min prevents vertices from going below -2.0f
+                        _HeightBuffer[index] -= min(erosionAmount * weight, _HeightBuffer[index] + 2.0f);
                     }
                 }
             }
