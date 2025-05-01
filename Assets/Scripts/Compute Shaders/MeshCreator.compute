@@ -17,7 +17,7 @@ RWStructuredBuffer<VertexData> _VertexDataBuffer;
 // Variables
 uint numVertices;
 uint resolution; // mapWidth : Based on number vertices
-float scale; 
+float scale;
 
 // The majority of this Compute Shader is just calculations to get the normal for the current vertex
 [numthreads(64,1,1)]
@@ -33,94 +33,92 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     
     float3 currentVertex = float3(xPos, _HeightMap[id.x], zPos);
     float3 normalSum = float3(0, 0, 0);
-
-    // Precomputing all directions, hopefully makes all threads sync better as they may be used multiple times
-    // Height is based on what may be those vertices heights after erosion, which this shader also updates
-    float3 top = float3(xPos, _HeightMap[id.x - resolution], (z-1) * scale);
-    float3 left = float3((x-1) * scale, _HeightMap[id.x - 1], zPos);
-    float3 right = float3((x+1) * scale, _HeightMap[id.x + 1], zPos);
-    float3 bottom = float3(xPos, _HeightMap[id.x + resolution], (z+1) * scale);
-    float3 topLeft = float3((x-1) * scale, _HeightMap[id.x - resolution - 1], (z-1) * scale);
-    float3 topRight = float3((x+1) * scale, _HeightMap[id.x - resolution + 1], (z-1) * scale);
-    float3 bottomLeft = float3((x-1) * scale, _HeightMap[id.x + resolution - 1], (z+1) * scale);
-    float3 bottomRight = float3((x+1) * scale, _HeightMap[id.x + resolution + 1], (z+1) * scale);
-
     
     // Check 4 adjacent quads (6 triangles total)
-    // Quad 1: Top-left
+    // Quad 1: Top-left : Only 1 triangle here because of planar faces
     if (x > 0 && z > 0)
     {
-        // Triangle 1: Current -> Left -> Top
+        float3 top = float3(xPos, _HeightMap[id.x - resolution], (z-1) * scale);
+        float3 left = float3((x-1) * scale, _HeightMap[id.x - 1], zPos);
+
+        // Triangle 1: Current -> Top -> Left
         float3 AB = left - currentVertex;
         float3 AC = top - currentVertex;
-        normalSum += cross(AC, AB); // Unity left-handed
-        
-        // Triangle 2: Left -> TopLeft -> Top
-        AB = topLeft - left;
-        AC = top - left;
-        normalSum += cross(AC, AB);
+        normalSum += cross(AB, AC); 
     }
 
     // Quad 2: Top-right
-    if (x < resolution-1 && z > 0)
+    if (x < resolution - 1 && z > 0)
     {
-        // Triangle 1: Current -> Top -> Right
-        float3 AB = top - currentVertex;
-        float3 AC = right - currentVertex;
-        normalSum += cross(AC, AB);
+        float3 top = float3(xPos, _HeightMap[id.x - resolution], (z-1) * scale);
+        float3 right = float3((x+1) * scale, _HeightMap[id.x + 1], zPos);
+        float3 topRight = float3((x+1) * scale, _HeightMap[id.x - resolution + 1], (z-1) * scale);
+
         
-        // Triangle 2: Top -> TopRight -> Right
-        AB = topRight - top;
-        AC = right - top;
-        normalSum += cross(AC, AB);
+        // Triangle 1: Current -> Top -> TopRight
+        float3 AB = topRight - currentVertex;
+        float3 AC = top - currentVertex;
+        normalSum += cross(AB, AC);
+        
+        // Triangle 2: Current -> TopRight -> Right
+        AB = right - currentVertex;
+        AC = topRight - currentVertex;
+        normalSum += cross(AB, AC);
     }
 
-    // Quad 3: Bottom-right
-    if (x < resolution-1 && z < resolution-1)
+    // Quad 3: Bottom-right : Only 1 triangle because of planer vertices
+    if (x < resolution - 1 && z < resolution - 1)
     {
-        // Triangle 1: Current -> Right -> Bottom
-        float3 AB = right - currentVertex;
-        float3 AC = bottom - currentVertex;
-        normalSum += cross(AC, AB);
+        float3 right = float3((x+1) * scale, _HeightMap[id.x + 1], zPos);
+        float3 bottom = float3(xPos, _HeightMap[id.x + resolution], (z+1) * scale);
         
-        // Triangle 2: Right -> BottomRight -> Bottom
-        AB = bottomRight - right;
-        AC = bottom - right;
-        normalSum += cross(AC, AB);
+        // Triangle 1: Current -> Right -> Bottom
+        float3 AB = bottom - currentVertex;
+        float3 AC = right - currentVertex;
+        normalSum += cross(AB, AC);
     }
 
     // Quad 4: Bottom-left
-    if (x > 0 && z < resolution-1)
+    if (x > 0 && z < resolution - 1)
     {
-        // Triangle 1: Current -> Bottom -> Left
-        float3 AB = bottom - currentVertex;
-        float3 AC = left - currentVertex;
-        normalSum += cross(AC, AB);
+        float3 left = float3((x-1) * scale, _HeightMap[id.x - 1], zPos);
+        float3 bottom = float3(xPos, _HeightMap[id.x + resolution], (z+1) * scale);
+        float3 bottomLeft = float3((x-1) * scale, _HeightMap[id.x + resolution - 1], (z+1) * scale);
         
-        // Triangle 2: Bottom -> BottomLeft -> Left
-        AB = bottomLeft - bottom;
-        AC = left - bottom;
-        normalSum += cross(AC, AB);
+        // Triangle 1: Current -> BottomLeft -> Left
+        float3 AB = left - currentVertex;
+        float3 AC = bottomLeft - currentVertex;
+        normalSum += cross(AB, AC);
+        
+        // Triangle 2: Current -> Bottom -> BottomLeft
+        AB = bottomLeft - currentVertex;
+        AC = bottom - currentVertex;
+        normalSum += cross(AB, AC);
     }
 
     float3 normal = normalize(normalSum);
 
-    // Compute derivatives
-    float3 dpdx = right - left;
-    float3 dpdz = bottom - top;
+    // Essentially get the slope where the vertex is along the x-axis
+    float3 tangent;
+    if (x > 0 && x < resolution - 1) 
+    {
+        float3 rightVertex = float3((x + 1) * scale, _HeightMap[id.x + 1], zPos);
+        float3 leftVertex = float3((x - 1) * scale, _HeightMap[id.x - 1], zPos);
+        tangent = normalize(rightVertex - leftVertex);
+    }
+    else if (x == 0) // Left edge case
+    {
+        float3 rightVertex = float3((x + 1) * scale, _HeightMap[id.x + 1], zPos);
+        tangent = normalize(rightVertex - currentVertex);
+    }
+    else // Right edge case
+    {
+        float3 leftVertex = float3((x - 1) * scale, _HeightMap[id.x - 1], zPos);
+        tangent = normalize(currentVertex - leftVertex);
+    }
 
-    // Orthogonalize dpdx against the normal 
-    float3 tangent = normalize(dpdx - normal * dot(normal, dpdx));
-
-    // Compute bitangent from dpdz and orthogonalize it
-    float3 bitangent = normalize(dpdz - normal * dot(normal, dpdz));
-
-    // Ensure orthogonality between tangent and bitangent
-    bitangent = normalize(bitangent - tangent * dot(tangent, bitangent));
-
-    // Optional: Re-orthogonalize tangent against bitangent
-    tangent = normalize(tangent - bitangent * dot(bitangent, tangent));
-
+    // Make the tangent Orthogonal to the normal
+    tangent = normalize(tangent - dot(tangent, normal) * normal); 
     
     // Update relevant data for each vertex
     _VertexDataBuffer[id.x].position = currentVertex;

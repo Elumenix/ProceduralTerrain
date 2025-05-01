@@ -19,7 +19,7 @@ void FixMesh_float(float VertexIDf, out float3 Position, out float3 Normal, out 
     uint vertex = _IndexBuffer[index];
     VertexData v = _VertexDataBuffer[vertex];
 
-    Position = float3(v.position.x * 100, v.position.y, v.position.z * 100);
+    Position = v.position;
     Normal = v.normal;
     Tangent = v.tangent;
 }
