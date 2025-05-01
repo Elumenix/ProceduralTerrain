@@ -7,6 +7,7 @@ struct VertexData
     float u;
     float3 normal;
     float v;
+    float3 tangent;
 };
 
 // Buffers
@@ -61,7 +62,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     }
 
     // Quad 2: Top-right
-    if (x < resolution && z > 0)
+    if (x < resolution-1 && z > 0)
     {
         // Triangle 1: Current -> Top -> Right
         float3 AB = top - currentVertex;
@@ -75,7 +76,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     }
 
     // Quad 3: Bottom-right
-    if (x < resolution && z < resolution)
+    if (x < resolution-1 && z < resolution-1)
     {
         // Triangle 1: Current -> Right -> Bottom
         float3 AB = right - currentVertex;
@@ -89,7 +90,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     }
 
     // Quad 4: Bottom-left
-    if (x > 0 && z < resolution)
+    if (x > 0 && z < resolution-1)
     {
         // Triangle 1: Current -> Bottom -> Left
         float3 AB = bottom - currentVertex;
@@ -101,10 +102,30 @@ void CSMain (uint3 id : SV_DispatchThreadID)
         AC = left - bottom;
         normalSum += cross(AC, AB);
     }
+
+    float3 normal = normalize(normalSum);
+
+    // Compute derivatives
+    float3 dpdx = right - left;
+    float3 dpdz = bottom - top;
+
+    // Orthogonalize dpdx against the normal 
+    float3 tangent = normalize(dpdx - normal * dot(normal, dpdx));
+
+    // Compute bitangent from dpdz and orthogonalize it
+    float3 bitangent = normalize(dpdz - normal * dot(normal, dpdz));
+
+    // Ensure orthogonality between tangent and bitangent
+    bitangent = normalize(bitangent - tangent * dot(tangent, bitangent));
+
+    // Optional: Re-orthogonalize tangent against bitangent
+    tangent = normalize(tangent - bitangent * dot(bitangent, tangent));
+
     
     // Update relevant data for each vertex
     _VertexDataBuffer[id.x].position = currentVertex;
     _VertexDataBuffer[id.x].u = xPos; // World Space UV
-    _VertexDataBuffer[id.x].normal = normalize(normalSum);
+    _VertexDataBuffer[id.x].normal = normal;
     _VertexDataBuffer[id.x].v = zPos; // World Space UV
+    _VertexDataBuffer[id.x].tangent = tangent;
 }

@@ -7,8 +7,8 @@ using UnityEngine.Rendering;
 using UnityEngine.UI;
 
 //[ExecuteInEditMode]
-//[RequireComponent(typeof(MeshFilter))]
-//[RequireComponent(typeof(MeshRenderer))]
+[RequireComponent(typeof(MeshFilter))]
+[RequireComponent(typeof(MeshRenderer))]
 public class MeshGenerator : MonoBehaviour
 {
     public enum DrawMode
@@ -126,6 +126,8 @@ public class MeshGenerator : MonoBehaviour
     // Using this for inline methods
     public List<Slider> sliders;
     public Toggle erosionToggle;
+    private Mesh mesh;
+    private MeshRenderer textureRenderer;
 
     void Start()
     {
@@ -133,14 +135,14 @@ public class MeshGenerator : MonoBehaviour
         pendingRelease = new List<ComputeBuffer>();
         Camera.main!.depthTextureMode = DepthTextureMode.Depth;
         // Set reference for gameObject to use the mesh we create here
-        /*mesh = new Mesh();
+        mesh = new Mesh();
         GetComponent<MeshFilter>().mesh = mesh;
         textureRenderer = GetComponent<MeshRenderer>();
 
         // Some Mesh Optimization
         mesh.MarkDynamic();
         mesh.indexFormat = IndexFormat.UInt32; // Allows larger meshes
-        */
+        
         
         // Hook up sliders to variables, I'm using inline functions because these are really simple and repetitive
         erosionToggle.onValueChanged.AddListener(val => { skipErosion = !val; isDirty = true; });
@@ -207,7 +209,6 @@ public class MeshGenerator : MonoBehaviour
 
     
     // Uv is being split up to facilitate proper byte alignment
-    // Sends 32 bytes instead of 48, which is huge for how large this buffer will be
     [StructLayout(LayoutKind.Sequential)]
     struct VertexData
     {
@@ -215,6 +216,7 @@ public class MeshGenerator : MonoBehaviour
         public float u;
         public Vector3 normal;
         public float v;
+        public float3 tangent;
     }
 
     private void GenerateMap()
@@ -259,6 +261,25 @@ public class MeshGenerator : MonoBehaviour
                 // Step 4: Generate Mesh Data
                 // Creates a new buffer to hold mesh data that we'll use in the drawing shader. Only Reads the heightMap
                 CreateMeshGPU();
+                
+                //UpdateMesh();
+
+                /*AsyncGPUReadback.Request(indexBuffer, request =>
+                {
+                    AsyncGPUReadback.Request(vertexDataBuffer, request2 =>
+                    {
+                        request.GetData<int>().CopyTo(mesh.triangles);
+                        VertexData[] vertexData = request2.GetData<VertexData>().ToArray();
+                            
+                        for (int i = 0; i < mapLength; i++)
+                        {
+                            VertexData v = vertexData[i];
+                            mesh.vertices[i] = v.position;
+                            mesh.uv[i] = new Vector2(v.u, v.v);
+                            mesh.normals[i] = v.normal;
+                        }
+                    });
+                });*/
         
                 // Release all buffers that no longer need to be used
                 foreach (ComputeBuffer buffer in pendingRelease)
@@ -266,7 +287,7 @@ public class MeshGenerator : MonoBehaviour
                     buffer.Release();
                 }
                 pendingRelease.Clear();
-        
+                
                 // Confirm that a new map can be generated next frame if dirty
                 isGenerating = false;
             }
@@ -279,7 +300,7 @@ public class MeshGenerator : MonoBehaviour
         meshGenShader.SetFloat(Scale, 1.0f / dim);
         
         // This will hold vertices, uvs, and the modified heightmap
-        vertexDataBuffer = new ComputeBuffer(mapLength, 32);
+        vertexDataBuffer = new ComputeBuffer(mapLength, 44);
         vertexDataBuffer.SetData(new VertexData[mapLength]);
         activeBuffers.Add(vertexDataBuffer);
         
