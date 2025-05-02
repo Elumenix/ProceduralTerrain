@@ -1,6 +1,4 @@
-using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.InteropServices;
 using Unity.Mathematics;
 using Unity.VisualScripting;
@@ -9,25 +7,8 @@ using UnityEngine.Rendering;
 using UnityEngine.UI;
 
 //[ExecuteInEditMode]
-[RequireComponent(typeof(MeshFilter))]
-[RequireComponent(typeof(MeshRenderer))]
 public class MeshGenerator : MonoBehaviour
 {
-    public enum DrawMode
-    {
-        noiseMap,
-        colorMap,
-        heightMap,
-        coloredHeightMap
-    };
-
-    public enum NoiseType
-    {
-        Perlin,
-        Simplex,
-        Worley
-    }
-    
     // Variables Changeable within the editor
     public Noise noise;
     public DrawMode drawMode;
@@ -61,14 +42,11 @@ public class MeshGenerator : MonoBehaviour
     private bool isGenerating = false;
     
     // Object reference variables
-    //private Renderer textureRenderer;
-    //private Mesh mesh;
     public Material meshCreator;
 
     // Compute Shader Data
     public ComputeShader meshGenShader;
     public ComputeShader erosionShader;
-    public ComputeShader indexShader;
     private ComputeBuffer heightMap;
     private ComputeBuffer vertexDataBuffer;
     private ComputeBuffer indexBuffer;
@@ -95,7 +73,7 @@ public class MeshGenerator : MonoBehaviour
     public int radius;
     [Range(0, 0.1f)]
     public float minSlope;
-
+    
     #region StringSearchOptimization
     // String search optimization for material shader properties
     private static readonly int MinHeight = Shader.PropertyToID("_MinHeight");
@@ -128,9 +106,6 @@ public class MeshGenerator : MonoBehaviour
     // Using this for inline methods
     public List<Slider> sliders;
     public Toggle erosionToggle;
-    private Mesh mesh;
-    private MeshRenderer textureRenderer;
-    private Vector3[] vertices;
 
     void Start()
     {
@@ -138,14 +113,6 @@ public class MeshGenerator : MonoBehaviour
         pendingRelease = new List<ComputeBuffer>();
         Camera.main!.depthTextureMode = DepthTextureMode.Depth;
         // Set reference for gameObject to use the mesh we create here
-        mesh = new Mesh();
-        GetComponent<MeshFilter>().mesh = mesh;
-        textureRenderer = GetComponent<MeshRenderer>();
-
-        // Some Mesh Optimization
-        mesh.MarkDynamic();
-        mesh.indexFormat = IndexFormat.UInt32; // Allows larger meshes
-        
         
         // Hook up sliders to variables, I'm using inline functions because these are really simple and repetitive
         erosionToggle.onValueChanged.AddListener(val => { skipErosion = !val; isDirty = true; });
@@ -190,7 +157,7 @@ public class MeshGenerator : MonoBehaviour
         meshCreator.SetBuffer(VertexDataBuffer, vertexDataBuffer);
         meshCreator.SetBuffer(IndexBuffer, indexBuffer);
         meshCreator.SetPass(0);
-        Graphics.DrawProceduralNow(MeshTopology.Triangles, indexBuffer.count, 1);
+        Graphics.DrawProceduralNow(MeshTopology.Triangles, indexBuffer.count);
     }
     
 
@@ -208,20 +175,6 @@ public class MeshGenerator : MonoBehaviour
         }
     }
 
-
-
-    
-    // Uv is being split up to facilitate proper byte alignment
-    [StructLayout(LayoutKind.Sequential)]
-    struct VertexData
-    {
-        public Vector3 position;
-        public float u;
-        public Vector3 normal;
-        public float v;
-        public float3 tangent;
-    }
-
     private void GenerateMap()
     {
         isGenerating = true;
@@ -231,8 +184,7 @@ public class MeshGenerator : MonoBehaviour
         dim = resolution;
         mapLength = (resolution + 1) * (resolution + 1);
         
-        // TODO: Check of random is even used in meshGenerator anymore
-        // Creating new random reference so that I can batch random values
+        // Creating new random reference so that I can batch random values. For both noise and erosion
         _random = new Unity.Mathematics.Random((uint)seed);
         
         // Swap out old index and vertex buffers to be deleted
@@ -257,45 +209,13 @@ public class MeshGenerator : MonoBehaviour
                 ComputeErosion();
                 
                 // Step 3: Generate Indices
-                // Needs to be done separate from mesh creation, and doesn't use heightMap, so it helps a bit with synchronization
+                // Needs to be done separate from mesh creation, and doesn't use heightMap, so it helps a bit with synchronization (Maybe, probably doesn't matter)
                 GenerateIndices();
-                
                 
                 // Step 4: Generate Mesh Data
                 // Creates a new buffer to hold mesh data that we'll use in the drawing shader. Only Reads the heightMap
                 CreateMeshGPU();
                 
-                //UpdateMesh();
-
-                AsyncGPUReadback.Request(indexBuffer, request =>
-                {
-                    int[] indices = new int[dim * dim * 6];
-                    request.GetData<int>().CopyTo(indices);
-                    
-                    AsyncGPUReadback.Request(vertexDataBuffer, request2 =>
-                    {
-                        
-                        VertexData[] vertexData = request2.GetData<VertexData>().ToArray();
-                        vertices = new Vector3[mapLength];
-                        Vector2[] uvs = new Vector2[mapLength];
-                        
-                            
-                        for (int i = 0; i < mapLength; i++)
-                        {
-                            VertexData v = vertexData[i];
-                            vertices[i] = v.position;
-                            uvs[i] = new Vector2(v.u, v.v);
-                        }
-
-                        mesh.Clear();
-                        mesh.SetVertices(vertices, 0, mapLength, MeshUpdateFlags.DontValidateIndices);
-                        mesh.SetUVs(0, uvs, 0, mapLength, MeshUpdateFlags.DontValidateIndices);
-                        mesh.SetIndices(indices, MeshTopology.Triangles, 0);
-                        mesh.RecalculateNormals();
-                        mesh.RecalculateTangents();
-                    });
-                });
-        
                 // Release all buffers that no longer need to be used
                 foreach (ComputeBuffer buffer in pendingRelease)
                 {
@@ -315,7 +235,7 @@ public class MeshGenerator : MonoBehaviour
         meshGenShader.SetFloat(Scale, 100.0f / dim);
         
         // This will hold vertices, uvs, and the modified heightmap
-        vertexDataBuffer = new ComputeBuffer(mapLength, 44);
+        vertexDataBuffer = new ComputeBuffer(mapLength, 36);
         vertexDataBuffer.SetData(new VertexData[mapLength]);
         activeBuffers.Add(vertexDataBuffer);
         
@@ -336,12 +256,12 @@ public class MeshGenerator : MonoBehaviour
         activeBuffers.Add(indexBuffer);
         
         // Set Shader data
-        indexShader.SetBuffer(0, IndexBuffer, indexBuffer);
-        indexShader.SetInt(QuadWidth, dim);
-        indexShader.SetInt(NumQuads, numQuads);
+        meshGenShader.SetBuffer(1, IndexBuffer, indexBuffer);
+        meshGenShader.SetInt(QuadWidth, dim);
+        meshGenShader.SetInt(NumQuads, numQuads);
         
         // Dispatch Shader so that the indexBuffer is available for UpdateMesh
-        indexShader.Dispatch(0, Mathf.CeilToInt(numQuads / 64.0f), 1, 1);
+        meshGenShader.Dispatch(1, Mathf.CeilToInt(numQuads / 64.0f), 1, 1);
     }
 
     private void ComputeErosion()
@@ -366,147 +286,5 @@ public class MeshGenerator : MonoBehaviour
         
         // Execute erosion shader
         erosionShader.Dispatch(0, Mathf.CeilToInt(numRainDrops / 64.0f), 1, 1);
-    }
-
-    void OnDrawGizmos()
-    {
-        int width = resolution + 1;
-        float scale = 100.0f / dim;
-        for (int i = 0; i < mapLength; i++)
-        {
-            // find x/z position on the map
-            int x = i % width;
-            int z = i / width;
-            float xPos = x * scale;
-            float zPos = z * scale;
-            
-
-            Vector3 currentVertex = new Vector3(xPos, vertices[i].y, zPos);
-            Vector3 normalSum = Vector3.zero;
-
-            Gizmos.color = Color.red;
-            // Check 4 adjacent quads (6 triangles total)
-            // Quad 1: Top-left
-            if (x > 0 && z > 0)
-            {
-                Vector3 top = new Vector3(xPos, vertices[i - width].y, (z - 1) * scale);
-                Vector3 left = new Vector3((x - 1) * scale, vertices[i - 1].y, zPos);
-
-                
-                // Triangle 1: Current -> Top -> Left
-                Vector3 AC = left - currentVertex;
-                Vector3 AB = top - currentVertex;
-                normalSum += Vector3.Cross(AB, AC); // Unity left-handed
-            }
-
-            // Quad 2: Top-right
-            if (x < width - 1 && z > 0)
-            {
-                Vector3 top = new Vector3(xPos, vertices[i - width].y, (z - 1) * scale);
-                Vector3 right = new Vector3((x + 1) * scale, vertices[i + 1].y, zPos);
-                Vector3 topRight = new Vector3((x + 1) * scale, vertices[i - width + 1].y, (z - 1) * scale);
-
-                
-                // Triangle 1: Current -> Top -> TopRight
-                Vector3 AB = topRight - currentVertex;
-                Vector3 AC = top - currentVertex;
-                normalSum += Vector3.Cross(AB, AC);
-
-
-                // Triangle 2: Current -> TopRight -> Right
-                AB = right - currentVertex;
-                AC = topRight - currentVertex;
-                normalSum += Vector3.Cross(AB, AC);
-                //Gizmos.DrawLine(vertices[i], vertices[i] + Vector3.Cross(AB,AC) * 100);
-
-            }
-
-            // Quad 3: Bottom-right
-            if (x < width - 1 && z < width - 1)
-            {
-                Vector3 right = new Vector3((x + 1) * scale, vertices[i + 1].y, zPos);
-                Vector3 bottom = new Vector3(xPos, vertices[i + width].y, (z + 1) * scale);
-                    
-                // Triangle 1: Current -> Right -> Bottom
-                Vector3 AB = bottom - currentVertex;
-                Vector3 AC = right - currentVertex;
-                normalSum += Vector3.Cross(AB, AC);
-            }
-            
-            // Quad 4: Bottom-left
-            if (x > 0 && z < width - 1)
-            {
-                Vector3 left = new Vector3((x - 1) * scale, vertices[i - 1].y, zPos);
-                Vector3 bottom = new Vector3(xPos, vertices[i + width].y, (z + 1) * scale);
-                Vector3 bottomLeft = new Vector3((x - 1) * scale, vertices[i + width - 1].y, (z + 1) * scale);
-                
-                // Triangle 1: Current -> BottomLeft -> Left
-                Vector3 AB = left - currentVertex;
-                Vector3 AC = bottomLeft - currentVertex;
-                normalSum += Vector3.Cross(AB, AC);
-
-
-                // Triangle 2: Current -> Bottom -> BottomLeft
-                AB = bottomLeft - currentVertex;
-                AC = bottom - currentVertex;
-                normalSum += Vector3.Cross(AB, AC);
-            }
-            
-            Vector3 normal = Vector3.Normalize(normalSum);
-            //Gizmos.DrawLine(vertices[i], vertices[i] + normal * 2);
-
-            Vector3 tangent;
-            if (x > 0 && x < width - 1) 
-            {
-                Vector3 rightVertex = new Vector3((x + 1) * scale, vertices[i + 1].y, zPos);
-                Vector3 leftVertex = new Vector3((x - 1) * scale, vertices[i - 1].y, zPos);
-                tangent = Vector3.Normalize(rightVertex - leftVertex);
-            }
-            else if (x == 0)
-            {
-                Vector3 rightVertex = new Vector3((x + 1) * scale, vertices[i + 1].y, zPos);
-                tangent = Vector3.Normalize(rightVertex - currentVertex);
-            }
-            else
-            {
-                Vector3 leftVertex = new Vector3((x - 1) * scale, vertices[i - 1].y, zPos);
-                tangent = Vector3.Normalize(currentVertex - leftVertex);
-            }
-            
-            tangent = Vector3.Normalize(tangent - Vector3.Dot(tangent, normal) * normal); 
-            Gizmos.color = tangent.y > 0 ? Color.green : Color.red;
-            Gizmos.DrawLine(vertices[i], vertices[i] + tangent);
-        }
-
-        /*List<Vector3> normals = new List<Vector3>();
-        mesh.GetNormals(normals);
-
-        Gizmos.color = Color.red;
-        for (int i = 0; i < mapLength; i++)
-        {
-            Vector3 vertexPosition = new Vector3(vertices[i].x + 110, vertices[i].y, vertices[i].z);
-            Gizmos.DrawLine(vertexPosition, vertexPosition + normals[i] * 2);
-        }*/
-        
-        List<Vector4> tangents = new List<Vector4>();
-        mesh.GetTangents(tangents);
-
-        for (int i = 0; i < mapLength; i++)
-        {
-            Vector3 tangent = new Vector3(tangents[i].x, tangents[i].y, tangents[i].z);
-            Vector3 vertexPosition = new Vector3(vertices[i].x + 110, vertices[i].y, vertices[i].z);
-
-            if (tangent.y > 0)
-            {
-                Gizmos.color = Color.green;
-                Gizmos.DrawLine(vertexPosition, vertexPosition + tangent);
-
-            }
-            else
-            {
-                Gizmos.color = Color.red;
-                Gizmos.DrawLine(vertexPosition, vertexPosition + tangent);
-            }
-        }
     }
 }

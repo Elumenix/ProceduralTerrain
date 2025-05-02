@@ -2,11 +2,12 @@
 #define FIX_MESH_CODE
 #pragma target 5.0 // Needed for StructuredBuffer
 
+
+// The entire point of this class is to match indices to vertex/normal/tangent in a shaderGraph
+// This script should be added as a custom node to the shaderGraph to be used
 struct VertexData {
     float3 position;
-    float u;
     float3 normal;
-    float v;
     float3 tangent;
 };
 

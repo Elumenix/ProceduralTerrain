@@ -175,7 +175,9 @@ void SimulateDrop(int x, int y)
                         const float weight = max(0, (fRadius - d) * invNorm);
 
                         // Erode the terrain by the proper amount. Min prevents vertices from going below -2.0f
-                        _HeightBuffer[index] -= min(erosionAmount * weight, _HeightBuffer[index] + 2.0f);
+                        //_HeightBuffer[index] -= min(erosionAmount * weight, _HeightBuffer[index] + 2.0f);
+
+                        _HeightBuffer[index] -= erosionAmount * weight;
                     }
                 }
             }

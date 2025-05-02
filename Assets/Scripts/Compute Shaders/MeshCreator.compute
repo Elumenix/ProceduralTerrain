@@ -1,12 +1,11 @@
 // Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel CSMain
+#pragma kernel GenerateIndices
 
 struct VertexData
 {
     float3 position;
-    float u;
     float3 normal;
-    float v;
     float3 tangent;
 };
 
@@ -41,9 +40,9 @@ void CSMain (uint3 id : SV_DispatchThreadID)
         float3 top = float3(xPos, _HeightMap[id.x - resolution], (z-1) * scale);
         float3 left = float3((x-1) * scale, _HeightMap[id.x - 1], zPos);
 
-        // Triangle 1: Current -> Top -> Left
-        float3 AB = left - currentVertex;
-        float3 AC = top - currentVertex;
+        // Triangle 1: Current -> Left -> Top
+        float3 AB = top - currentVertex;
+        float3 AC = left - currentVertex;
         normalSum += cross(AB, AC); 
     }
 
@@ -122,8 +121,44 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     
     // Update relevant data for each vertex
     _VertexDataBuffer[id.x].position = currentVertex;
-    _VertexDataBuffer[id.x].u = xPos; // World Space UV
     _VertexDataBuffer[id.x].normal = normal;
-    _VertexDataBuffer[id.x].v = zPos; // World Space UV
     _VertexDataBuffer[id.x].tangent = tangent;
+}
+
+
+RWStructuredBuffer<uint> _IndexBuffer;
+uint quadWidth;
+uint numQuads;
+
+[numthreads(64,1,1)]
+void GenerateIndices (uint3 id : SV_DispatchThreadID)
+{
+    // Non-existent
+    if (id.x >= numQuads) return;
+    
+    int y = id.x / quadWidth;
+    int x = id.x % quadWidth;
+
+    // Row Offsets
+    int rowOffset = y * (quadWidth + 1);
+    int nextRowOffset = (y + 1) * (quadWidth + 1);
+
+    // The four corners of this quad
+    int current = rowOffset + x;
+    int next = current + 1;
+    int below = nextRowOffset + x;
+    int belowNext = below + 1;
+
+    // Which index in the indices array is this starting at
+    int index = 6 * id.x;
+            
+    // Top Left Triangle
+    _IndexBuffer[index] = current;
+    _IndexBuffer[index + 1] = below;
+    _IndexBuffer[index + 2] = next;
+            
+    // Bottom right triangle
+    _IndexBuffer[index + 3] = next;
+    _IndexBuffer[index + 4] = below;
+    _IndexBuffer[index + 5] = belowNext;
 }
