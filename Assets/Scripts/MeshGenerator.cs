@@ -88,6 +88,7 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int Scale = Shader.PropertyToID("scale");
     private static readonly int HeightMap = Shader.PropertyToID("_HeightMap"); 
     private static readonly int HeightBuffer = Shader.PropertyToID("_HeightBuffer");
+
     
     // String search optimization for Erosion
     private static readonly int NumVertices = Shader.PropertyToID("numVertices"); 
@@ -154,6 +155,11 @@ public class MeshGenerator : MonoBehaviour
     {
         if (vertexDataBuffer == null || indexBuffer == null) return;
         
+        // This is an approximation because it doesn't account for erosion, however, it is fairly accurate
+        // It saves us from doing two reduction calls and an async callback (which would cause flickering as the mesh changed)
+        meshCreator.SetFloat(MaxHeight, heightMultiplier + 2);
+        //meshCreator.SetFloat(MinHeight, -noiseScale);
+        
         meshCreator.SetBuffer(VertexDataBuffer, vertexDataBuffer);
         meshCreator.SetBuffer(IndexBuffer, indexBuffer);
         meshCreator.SetPass(0);
@@ -208,11 +214,12 @@ public class MeshGenerator : MonoBehaviour
                 // Raindrops will be simulated on the terrain. This directly modifies the heightMap
                 ComputeErosion();
                 
-                // Step 3: Generate Indices
+                // Step 4: Generate Indices
                 // Needs to be done separate from mesh creation, and doesn't use heightMap, so it helps a bit with synchronization (Maybe, probably doesn't matter)
                 GenerateIndices();
                 
-                // Step 4: Generate Mesh Data
+                
+                // Step 5: Generate Mesh Data
                 // Creates a new buffer to hold mesh data that we'll use in the drawing shader. Only Reads the heightMap
                 CreateMeshGPU();
                 

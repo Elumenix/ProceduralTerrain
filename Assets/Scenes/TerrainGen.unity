@@ -946,7 +946,7 @@ MonoBehaviour:
     m_RotationOrder: 4
   noiseType: 1
   isDirty: 1
-  meshCreator: {fileID: 2100000, guid: 6230ec73badf3f04fb216f883cc6fdd3, type: 2}
+  meshCreator: {fileID: 2100000, guid: aef282a1063af3b4288ae21b5045a15e, type: 2}
   meshGenShader: {fileID: 7200000, guid: 4e2bd1e6d165b4745b976030b7d70f71, type: 3}
   erosionShader: {fileID: 7200000, guid: 9a2b9e1704516344dac6b9576fec7c54, type: 3}
   skipErosion: 0

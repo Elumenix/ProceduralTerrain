@@ -19,6 +19,7 @@ public class Noise : MonoBehaviour
     public ComputeShader reductionShader;
     public ComputeShader normalizationShader;
     public ComputeShader smoothShader;
+    private static ComputeShader rangeShader;
 
     // Cached Strings : Speeds things up 
     private static readonly int OffsetBuffer = Shader.PropertyToID("_OffsetBuffer");
@@ -54,6 +55,11 @@ public class Noise : MonoBehaviour
         public Vector2 offset;
         public float frequency;
         public float amplitude;
+    }
+
+    private void Awake()
+    {
+        rangeShader = reductionShader;
     }
 
     // Version of this function where we use the gpu asynchronously, which is required for Unity WebGPU beta
@@ -112,30 +118,9 @@ public class Noise : MonoBehaviour
                 break;
         }
         noiseShader.Dispatch(0, threadGroups, threadGroups, 1);
-        
-        // Reduction refers to me iterating the mesh to find the min and max height values
-        // This could have been done in two lines in the noise shader using atomics IF UNITY'S WEBGPU IMPLEMENTATION SUPPORTED IT
-        // REDUCTION PART 1
-        int reductionGroups = Mathf.CeilToInt(mapLength / 256.0f);
-        ComputeBuffer minMaxBuffer = new ComputeBuffer(reductionGroups, 8); // 8 bytes per float2
-        minMaxBuffer.SetData(new float2[reductionGroups]);
-        pendingRelease.Add(minMaxBuffer);
 
-        reductionShader.SetBuffer(0, HeightMapBuffer, heightMap);
-        reductionShader.SetBuffer(0, MinMax, minMaxBuffer);
-        reductionShader.SetInt(NumVertices, mapLength);
-        reductionShader.Dispatch(0, reductionGroups, 1, 1);
-
-        // REDUCTION PART 2
-        // Now that there are less than 256 groups, we can reduce that down to one
-        // Note that this would not be the case if the map resolution were above 4096, but that's far higher than the user can go
-        ComputeBuffer finalMinMax = new ComputeBuffer(1, 8);
-        finalMinMax.SetData(new float2[1]);
-        pendingRelease.Add(finalMinMax);
-        
-        reductionShader.SetBuffer(1, MinMaxInput, minMaxBuffer);
-        reductionShader.SetBuffer(1, MinMaxResult, finalMinMax);
-        reductionShader.Dispatch(1,1,1,1);
+        // Get the min/Max values in the mesh in order to perform normalization
+        ComputeBuffer finalMinMax = PerformReductions(heightMap, pendingRelease, mapLength);
         
         // NORMALIZATION
         normalizationShader.SetBuffer(0, HeightMapBuffer, heightMap);
@@ -171,6 +156,36 @@ public class Noise : MonoBehaviour
         }
 
         callback(heightMap);
+    }
+
+    // Essentially gets the min and max values of the mesh
+    public static ComputeBuffer PerformReductions(ComputeBuffer heightMap, List<ComputeBuffer> pendingRelease, int mapLength)
+    {
+        // Reduction refers to me iterating the mesh to find the min and max height values
+        // This could have been done in two lines in the noise shader using atomics IF UNITY'S WEBGPU IMPLEMENTATION SUPPORTED IT
+        // REDUCTION PART 1
+        int reductionGroups = Mathf.CeilToInt(mapLength / 256.0f);
+        ComputeBuffer minMaxBuffer = new ComputeBuffer(reductionGroups, 8); // 8 bytes per float2
+        minMaxBuffer.SetData(new float2[reductionGroups]);
+        pendingRelease.Add(minMaxBuffer);
+
+        rangeShader.SetBuffer(0, HeightMapBuffer, heightMap);
+        rangeShader.SetBuffer(0, MinMax, minMaxBuffer);
+        rangeShader.SetInt(NumVertices, mapLength);
+        rangeShader.Dispatch(0, reductionGroups, 1, 1);
+
+        // REDUCTION PART 2
+        // Now that there are less than 256 groups, we can reduce that down to one
+        // Note that this would not be the case if the map resolution were above 4096, but that's far higher than the user can go
+        ComputeBuffer finalMinMax = new ComputeBuffer(1, 8);
+        finalMinMax.SetData(new float2[1]);
+        pendingRelease.Add(finalMinMax);
+        
+        rangeShader.SetBuffer(1, MinMaxInput, minMaxBuffer);
+        rangeShader.SetBuffer(1, MinMaxResult, finalMinMax);
+        rangeShader.Dispatch(1,1,1,1);
+
+        return finalMinMax;
     }
 
 
