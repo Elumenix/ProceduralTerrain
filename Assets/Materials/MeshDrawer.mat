@@ -80,8 +80,16 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _SampleTexture2D_233ba698523c496db6137a19bd27d705_Texture_1_Texture2D:
+        m_Texture: {fileID: 2800000, guid: d9dcc4772b6d74a4aa4b0a1c89f7bd4d, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _SampleTexture2D_93534f085b6e45778111399fdfb3d798_Texture_1_Texture2D:
         m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SampleTexture2D_9b4db78def724a5e9bf4eea828bb7159_Texture_1_Texture2D:
+        m_Texture: {fileID: 2800000, guid: 8665402f475391b418adfa4a27137346, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _SampleTexture2D_af66b79b6422407ca0ed682739d403c9_Texture_1_Texture2D:
@@ -105,16 +113,16 @@ Material:
     - _BUILTIN_QueueControl: 0
     - _BUILTIN_QueueOffset: 0
     - _BlendAmount: 0.5
-    - _BlendFactor: 0.8
+    - _BlendFactor: 0.624
     - _BumpScale: 1
     - _Cutoff: 0.5
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
-    - _FadePower: 4.21
+    - _FadePower: 3.53
     - _GlossMapScale: 1
     - _Glossiness: 0.5
     - _GlossyReflections: 1
-    - _MaxGrassHeight: 0.481
+    - _MaxGrassHeight: 1.32
     - _MaxHeight: 22
     - _MaxMeshHeight: 1
     - _MaxSandHeight: 0.03
@@ -128,7 +136,7 @@ Material:
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
     - _SrcBlend: 1
-    - _Threshold: 0.339
+    - _Threshold: 0.447
     - _UVSec: 0
     - _ZWrite: 1
     m_Colors:

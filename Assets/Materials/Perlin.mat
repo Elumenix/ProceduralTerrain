@@ -116,6 +116,10 @@ Material:
         m_Texture: {fileID: 2800000, guid: c5a0f0feb07700248b092460639e43e8, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _SampleTexture2D_fb04e68bc1f4459a98d4bc33f6f7608f_Texture_1_Texture2D:
+        m_Texture: {fileID: 2800000, guid: c5a0f0feb07700248b092460639e43e8, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _SampleTexture2D_fdabd609a15f424fba9df1cdca1dd4db_Texture_1_Texture2D:
         m_Texture: {fileID: 2800000, guid: 65270011ef2beaf47ad8344c64e0138e, type: 3}
         m_Scale: {x: 1, y: 1}
@@ -141,13 +145,13 @@ Material:
     - _Cutoff: 0.5
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
-    - _FadePower: 1.55
+    - _FadePower: 2.29
     - _GlossMapScale: 1
     - _Glossiness: 0.5
     - _GlossyReflections: 1
-    - _MaxGrassHeight: 1
+    - _MaxGrassHeight: 0.438
     - _MaxHeight: 22
-    - _MaxSandHeight: 0.708
+    - _MaxSandHeight: 0.741
     - _Metallic: 0
     - _MinHeight: 0
     - _Mode: 0
@@ -155,8 +159,8 @@ Material:
     - _Parallax: 0.02
     - _QueueControl: 0
     - _QueueOffset: 0
-    - _RimFactor: 0.08
-    - _RimPower: 1.39
+    - _RimFactor: 0.832
+    - _RimPower: 0.23
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
     - _SrcBlend: 1

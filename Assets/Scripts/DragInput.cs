@@ -29,7 +29,7 @@ public class DragInput : TMP_InputField
         }
         else
         {
-            text = (int.Parse(text) + delta).ToString(CultureInfo.InvariantCulture);
+            text = (int.Parse(text) + Mathf.CeilToInt(delta)).ToString(CultureInfo.InvariantCulture);
         }
         
         // The proper update statement will be called by an event afterward to update the appropriate value
