@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
+using NUnit.Framework.Internal;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -161,9 +162,9 @@ public class Noise : MonoBehaviour
     // Essentially gets the min and max values of the mesh
     public static ComputeBuffer PerformReductions(ComputeBuffer heightMap, List<ComputeBuffer> pendingRelease, int mapLength)
     {
-        // Reduction refers to me iterating the mesh to find the min and max height values
-        // This could have been done in two lines in the noise shader using atomics IF UNITY'S WEBGPU IMPLEMENTATION SUPPORTED IT
         // REDUCTION PART 1
+        // Reduction refers to me iterating the mesh to find the min and max height values
+        // This could have been done (with two lines) in the noise shader using atomics IF UNITY'S WEBGPU IMPLEMENTATION SUPPORTED IT
         int reductionGroups = Mathf.CeilToInt(mapLength / 256.0f);
         ComputeBuffer minMaxBuffer = new ComputeBuffer(reductionGroups, 8); // 8 bytes per float2
         minMaxBuffer.SetData(new float2[reductionGroups]);
@@ -173,18 +174,22 @@ public class Noise : MonoBehaviour
         rangeShader.SetBuffer(0, MinMax, minMaxBuffer);
         rangeShader.SetInt(NumVertices, mapLength);
         rangeShader.Dispatch(0, reductionGroups, 1, 1);
+        
 
         // REDUCTION PART 2
-        // Now that there are less than 256 groups, we can reduce that down to one
-        // Note that this would not be the case if the map resolution were above 4096, but that's far higher than the user can go
+        // Now that there are up to 2048 reduction groups left, we can do them all in one pass
+        // Note that this would not be the case if the map resolution were above 4096x4096, but that's far higher than the user can go
         ComputeBuffer finalMinMax = new ComputeBuffer(1, 8);
         finalMinMax.SetData(new float2[1]);
         pendingRelease.Add(finalMinMax);
         
+        rangeShader.SetInt(NumVertices, reductionGroups);
         rangeShader.SetBuffer(1, MinMaxInput, minMaxBuffer);
         rangeShader.SetBuffer(1, MinMaxResult, finalMinMax);
+        
+        // 1 group will handle all remaining elements (up to 2048)
         rangeShader.Dispatch(1,1,1,1);
-
+        
         return finalMinMax;
     }
 

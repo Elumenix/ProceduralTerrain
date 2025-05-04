@@ -50,6 +50,7 @@ public class MeshGenerator : MonoBehaviour
     private ComputeBuffer heightMap;
     private ComputeBuffer vertexDataBuffer;
     private ComputeBuffer indexBuffer;
+    private ComputeBuffer minMaxBuffer;
     private List<ComputeBuffer> activeBuffers;
     private List<ComputeBuffer> pendingRelease;
 
@@ -76,8 +77,8 @@ public class MeshGenerator : MonoBehaviour
     
     #region StringSearchOptimization
     // String search optimization for material shader properties
-    private static readonly int MinHeight = Shader.PropertyToID("_MinHeight");
-    private static readonly int MaxHeight = Shader.PropertyToID("_MaxHeight");
+    private static readonly int MinMaxBuffer = Shader.PropertyToID("_MinMaxBuffer");
+
     
     // String search optimization for Mesh Creation
     private static readonly int VertexDataBuffer = Shader.PropertyToID("_VertexDataBuffer");
@@ -157,11 +158,12 @@ public class MeshGenerator : MonoBehaviour
         
         // This is an approximation because it doesn't account for erosion, however, it is fairly accurate
         // It saves us from doing two reduction calls and an async callback (which would cause flickering as the mesh changed)
-        meshCreator.SetFloat(MaxHeight, heightMultiplier + 2);
+        //meshCreator.SetFloat(MaxHeight, heightMultiplier + 2);
         //meshCreator.SetFloat(MinHeight, -noiseScale);
         
         meshCreator.SetBuffer(VertexDataBuffer, vertexDataBuffer);
         meshCreator.SetBuffer(IndexBuffer, indexBuffer);
+        meshCreator.SetBuffer(MinMaxBuffer, minMaxBuffer);
         meshCreator.SetPass(0);
         Graphics.DrawProceduralNow(MeshTopology.Triangles, indexBuffer.count);
     }
@@ -214,10 +216,12 @@ public class MeshGenerator : MonoBehaviour
                 // Raindrops will be simulated on the terrain. This directly modifies the heightMap
                 ComputeErosion();
                 
+                // Step 3: Get Min and Max Vertex now that nothing else will change the heightmap
+                minMaxBuffer = Noise.PerformReductions(heightMap, activeBuffers, mapLength);
+                
                 // Step 4: Generate Indices
                 // Needs to be done separate from mesh creation, and doesn't use heightMap, so it helps a bit with synchronization (Maybe, probably doesn't matter)
                 GenerateIndices();
-                
                 
                 // Step 5: Generate Mesh Data
                 // Creates a new buffer to hold mesh data that we'll use in the drawing shader. Only Reads the heightMap

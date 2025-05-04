@@ -15,15 +15,15 @@ uint numVertices;
 // Shared memory for reduction within a thread group
 groupshared float2 _GroupMinMax[64]; 
 
-[numthreads(8,8,1)]
-void HeightMapReduction (uint3 id : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
+[numthreads(64,1,1)]
+void HeightMapReduction (uint3 groupId : SV_GroupID, uint groupIndex : SV_GroupIndex)
 {
     // Initialize group shared memory with extreme values and synchronize
     _GroupMinMax[groupIndex] = float2(3.402823466e+38F, -3.402823466e+38F);
     GroupMemoryBarrierWithGroupSync();
 
     // Each thread processes 4 elements (from 256 elements down to 4)
-    uint baseIdx = id.x * 256;
+    uint baseIdx = groupId.x * 256;
     for (uint i = 0; i < 4; ++i)
     {
         // Confirm this is a valid vertex before reading
@@ -58,40 +58,47 @@ void HeightMapReduction (uint3 id : SV_DispatchThreadID, uint groupIndex : SV_Gr
     // This was only the Min/Max of this thread group
     if (groupIndex == 0)
     {
-        _MinMax[id.x] = _GroupMinMax[0];
+        _MinMax[groupId.x] = _GroupMinMax[0];
     }
 }
 
 // This is essentially the same as above. We're just operating on float2's instead of floats
 [numthreads(64,1,1)]
-void MinMaxReduction (uint3 id : SV_DispatchThreadID)
+void MinMaxReduction (uint3 groupId : SV_GroupID, uint groupIndex : SV_GroupIndex)
 {
-    uint idx = id.x;
-    _GroupMinMax[idx] = float2(3.402823466e+38F, -3.402823466e+38F);
+    _GroupMinMax[groupIndex] = float2(3.402823466e+38F, -3.402823466e+38F);
+
+    // This single thread group will process up to 2048 elements (32 elements per thread)
+    uint baseIdx = groupId.x * 2048;
     
-    if (idx < numVertices)
+    // Similar to above, we'll chop that down to 64
+    for (int i = 0; i < 32; i++)
     {
-        // This part is a bit different because we already know the min/max of each individual float2
-        float2 val = _MinMaxInput[idx];
-        _GroupMinMax[idx].x = min(_GroupMinMax[idx].x, val.x);
-        _GroupMinMax[idx].y = max(_GroupMinMax[idx].y, val.y);
+        uint idx = baseIdx + groupIndex * 32 + i;
+        if (idx < numVertices)
+        {
+            // This part is a bit different because we already know the min/max of each individual float2
+            float2 val = _MinMaxInput[idx];
+            _GroupMinMax[groupIndex].x = min(_GroupMinMax[groupIndex].x, val.x);
+            _GroupMinMax[groupIndex].y = max(_GroupMinMax[groupIndex].y, val.y);
+        }
     }
     
     GroupMemoryBarrierWithGroupSync();
 
-
+    // 64 elements to 1, exactly the same as above
     for (uint stride = 32; stride > 0; stride >>= 1)
     {
-        if (idx < stride) {
-            _GroupMinMax[idx].x = min(_GroupMinMax[idx].x, _GroupMinMax[idx + stride].x);
-            _GroupMinMax[idx].y = max(_GroupMinMax[idx].y, _GroupMinMax[idx + stride].y);
+        if (groupIndex < stride) {
+            _GroupMinMax[groupIndex].x = min(_GroupMinMax[groupIndex].x, _GroupMinMax[groupIndex + stride].x);
+            _GroupMinMax[groupIndex].y = max(_GroupMinMax[groupIndex].y, _GroupMinMax[groupIndex + stride].y);
         }
         GroupMemoryBarrierWithGroupSync();
     }
 
     // Found our final result
-    if (idx == 0)
+    if (groupIndex == 0)
     {
-        _MinMaxResult[0] = _GroupMinMax[0];
+        _MinMaxResult[groupId.x] = _GroupMinMax[0];
     }
 }
