@@ -11,6 +11,7 @@ RWStructuredBuffer<float2> _MinMaxResult;
 
 // Global
 uint numVertices;
+static const uint numGroups = numVertices; // Clarity
 
 // Shared memory for reduction within a thread group
 groupshared float2 _GroupMinMax[64]; 
@@ -75,7 +76,7 @@ void MinMaxReduction (uint3 groupId : SV_GroupID, uint groupIndex : SV_GroupInde
     for (int i = 0; i < 32; i++)
     {
         uint idx = baseIdx + groupIndex * 32 + i;
-        if (idx < numVertices)
+        if (idx < numGroups)
         {
             // This part is a bit different because we already know the min/max of each individual float2
             float2 val = _MinMaxInput[idx];

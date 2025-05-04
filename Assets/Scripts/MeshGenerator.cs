@@ -1,9 +1,6 @@
 using System.Collections.Generic;
-using System.Runtime.InteropServices;
 using Unity.Mathematics;
-using Unity.VisualScripting;
 using UnityEngine;
-using UnityEngine.Rendering;
 using UnityEngine.UI;
 
 //[ExecuteInEditMode]
@@ -39,7 +36,7 @@ public class MeshGenerator : MonoBehaviour
     
     // Variables made to help with the async nature of the code
     private int dim;
-    private bool isGenerating = false;
+    private bool isGenerating;
     
     // Object reference variables
     public Material meshCreator;
@@ -56,7 +53,7 @@ public class MeshGenerator : MonoBehaviour
 
     
     // Erosion Variables
-    public bool skipErosion = false;
+    public bool skipErosion;
     public int numRainDrops;
     [Range(0, .999f)]
     public float inertia = .999f;
@@ -78,7 +75,6 @@ public class MeshGenerator : MonoBehaviour
     #region StringSearchOptimization
     // String search optimization for material shader properties
     private static readonly int MinMaxBuffer = Shader.PropertyToID("_MinMaxBuffer");
-
     
     // String search optimization for Mesh Creation
     private static readonly int VertexDataBuffer = Shader.PropertyToID("_VertexDataBuffer");
@@ -246,8 +242,10 @@ public class MeshGenerator : MonoBehaviour
         meshGenShader.SetFloat(Scale, 100.0f / dim);
         
         // This will hold vertices, uvs, and the modified heightmap
-        vertexDataBuffer = new ComputeBuffer(mapLength, 36);
+        vertexDataBuffer = new ComputeBuffer(mapLength, sizeof(float) * 9); // 3 float3's
+        #if UNITY_EDITOR // Handled automatically be WebGPU
         vertexDataBuffer.SetData(new VertexData[mapLength]);
+        #endif
         activeBuffers.Add(vertexDataBuffer);
         
         meshGenShader.SetBuffer(0, VertexDataBuffer, vertexDataBuffer);
@@ -262,8 +260,10 @@ public class MeshGenerator : MonoBehaviour
         // Setup
         int numQuads = dim * dim;
         int numIndices = numQuads * 6;
-        indexBuffer = new ComputeBuffer(numIndices, 4);
+        indexBuffer = new ComputeBuffer(numIndices, sizeof(uint));
+        #if UNITY_EDITOR // Handled automatically be WebGPU
         indexBuffer.SetData(new int[numIndices]);
+        #endif
         activeBuffers.Add(indexBuffer);
         
         // Set Shader data
