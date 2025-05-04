@@ -49,10 +49,9 @@ public class Noise : MonoBehaviour
     }
 
     // Version of this function where we use the gpu asynchronously, which is required for Unity WebGPU beta
-    public void ComputeHeightMap(int mapResolution, Unity.Mathematics.Random _random, float scale,
+    public ComputeBuffer ComputeHeightMap(int mapResolution, Unity.Mathematics.Random _random, float scale,
         int octaves, float persistence, float lacunarity, float2 offset, int noiseType, float warpStrength,
-        float warpFreq, int smoothingPasses, float heightMultiplier, List<ComputeBuffer> pendingRelease,
-        Action<ComputeBuffer> callback)
+        float warpFreq, int smoothingPasses, float heightMultiplier, List<ComputeBuffer> pendingRelease)
     {
         int mapLength = mapResolution * mapResolution;
         int threadGroups = Mathf.CeilToInt(mapResolution / 16.0f);
@@ -145,7 +144,7 @@ public class Noise : MonoBehaviour
             heightMap = readBuffer;
         }
 
-        callback(heightMap);
+        return heightMap;
     }
 
     // Essentially gets the min and max values of the mesh

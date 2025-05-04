@@ -1,0 +1,16 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel Copy
+
+StructuredBuffer<float> _SourceBuffer;
+RWStructuredBuffer<float> _DestinationBuffer;
+uint numVertices;
+
+// Unfortunately, Unity doesn't have a built-in way to copy compute shaders. So we're doing it manually
+[numthreads(64,1,1)]
+void Copy (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x < numVertices)
+    {
+        _DestinationBuffer[id.x] = _SourceBuffer[id.x];
+    }
+}

@@ -13,18 +13,12 @@ namespace Editor
             // Automatically redraws if something in the inspector is changed
             if (DrawDefaultInspector())
             {
-                //meshGen.StopAllCoroutines();
-                meshGen.isDirty = true;
+                meshGen.isMeshDirty = true;
             }
-
-            /*if (GUILayout.Button("Erode"))
-            {
-                meshGen.ComputeErosion();
-            }*/
             
             if (GUILayout.Button("Reset"))
             {
-                meshGen.isDirty = true;
+                meshGen.isMeshDirty = true;
             }
         }
     }

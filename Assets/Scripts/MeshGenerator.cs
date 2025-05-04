@@ -31,7 +31,9 @@ public class MeshGenerator : MonoBehaviour
     public NoiseType noiseType;
     private Unity.Mathematics.Random _random;
     [HideInInspector]
-    public bool isDirty;
+    public bool isMeshDirty;
+    [HideInInspector]
+    public bool isErosionDirty;
     private int mapLength;
     
     // Variables made to help with the async nature of the code
@@ -44,10 +46,12 @@ public class MeshGenerator : MonoBehaviour
     // Compute Shader Data
     public ComputeShader meshGenShader;
     public ComputeShader erosionShader;
+    public ComputeShader copyComputeBuffer;
     private ComputeBuffer heightMap;
     private ComputeBuffer vertexDataBuffer;
     private ComputeBuffer indexBuffer;
     private ComputeBuffer minMaxBuffer;
+    private ComputeBuffer savedHeightMap;
     private List<ComputeBuffer> activeBuffers;
     private List<ComputeBuffer> pendingRelease;
 
@@ -75,8 +79,13 @@ public class MeshGenerator : MonoBehaviour
     #region StringSearchOptimization
     // String search optimization for material shader properties
     private static readonly int MinMaxBuffer = Shader.PropertyToID("_MinMaxBuffer");
+    private static readonly int MaxGrassHeight = Shader.PropertyToID("_MaxGrassHeight");
+    private static readonly int Threshold = Shader.PropertyToID("_Threshold");
+    private static readonly int BlendFactor = Shader.PropertyToID("_BlendFactor");
+    private static readonly int FadePower = Shader.PropertyToID("_FadePower");
     
     // String search optimization for Mesh Creation
+    private static readonly int NumVertices = Shader.PropertyToID("numVertices"); 
     private static readonly int VertexDataBuffer = Shader.PropertyToID("_VertexDataBuffer");
     private static readonly int IndexBuffer = Shader.PropertyToID("_IndexBuffer");
     private static readonly int QuadWidth = Shader.PropertyToID("quadWidth");
@@ -85,10 +94,11 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int Scale = Shader.PropertyToID("scale");
     private static readonly int HeightMap = Shader.PropertyToID("_HeightMap"); 
     private static readonly int HeightBuffer = Shader.PropertyToID("_HeightBuffer");
-
+    private static readonly int SourceBuffer = Shader.PropertyToID("_SourceBuffer");
+    private static readonly int DestinationBuffer = Shader.PropertyToID("_DestinationBuffer");
     
     // String search optimization for Erosion
-    private static readonly int NumVertices = Shader.PropertyToID("numVertices"); 
+    private static readonly int NumRainDrops = Shader.PropertyToID("numRainDrops");
     private static readonly int MaxSediment = Shader.PropertyToID("maxSediment");
     private static readonly int DepositionRate = Shader.PropertyToID("depositionRate");
     private static readonly int Softness = Shader.PropertyToID("softness");
@@ -105,46 +115,74 @@ public class MeshGenerator : MonoBehaviour
     public List<Slider> sliders;
     public Toggle erosionToggle;
 
+
     void Start()
     {
         activeBuffers = new List<ComputeBuffer>();
         pendingRelease = new List<ComputeBuffer>();
         Camera.main!.depthTextureMode = DepthTextureMode.Depth;
-        // Set reference for gameObject to use the mesh we create here
+        
+        // Default meshShader options (Needed because these change the actual material file)
+        meshCreator.SetFloat(MaxGrassHeight, .75f);
+        meshCreator.SetFloat(Threshold, .5f);
+        meshCreator.SetFloat(BlendFactor, .3f);
+        meshCreator.SetFloat(FadePower, 4.0f);
+        
         
         // Hook up sliders to variables, I'm using inline functions because these are really simple and repetitive
-        erosionToggle.onValueChanged.AddListener(val => { skipErosion = !val; isDirty = true; });
-        sliders[0].onValueChanged.AddListener(val => { resolution = (int)val; isDirty = true; });
-        sliders[1].onValueChanged.AddListener(val => { noiseType = (NoiseType)((int)val); isDirty = true; });
-        sliders[2].onValueChanged.AddListener(val => { noiseScale = val / 10.0f; isDirty = true; });
-        sliders[3].onValueChanged.AddListener(val => { heightMultiplier = val; isDirty = true; });
-        sliders[4].onValueChanged.AddListener(val => { octaves = (int)val; isDirty = true; });
-        sliders[5].onValueChanged.AddListener(val => { persistence = val; isDirty = true; });
-        sliders[6].onValueChanged.AddListener(val => { lacunarity = val; isDirty = true; });
-        sliders[7].onValueChanged.AddListener(val => { warpStrength = val; if (warpFrequency != 0) {isDirty = true;} });
-        sliders[8].onValueChanged.AddListener(val => { warpFrequency = val; if (warpStrength != 0) {isDirty = true;} });
-        sliders[9].onValueChanged.AddListener(val => { smoothingPasses = (int)val; isDirty = true; });
-        sliders[10].onValueChanged.AddListener(val => { numRainDrops = (int)val; isDirty = true; });
-        sliders[11].onValueChanged.AddListener(val => { inertia = val; isDirty = true; });
-        sliders[12].onValueChanged.AddListener(val => { sedimentMax = val; isDirty = true; });
-        sliders[13].onValueChanged.AddListener(val => { depositionRate = val; isDirty = true; });
-        sliders[14].onValueChanged.AddListener(val => { evaporationRate = val; isDirty = true; });
-        sliders[15].onValueChanged.AddListener(val => { softness = 1 - val; isDirty = true; });
-        sliders[16].onValueChanged.AddListener(val => { gravity = val; isDirty = true; });
-        sliders[17].onValueChanged.AddListener(val => { radius = (int)val; isDirty = true; });
-        sliders[18].onValueChanged.AddListener(val => { minSlope = val; isDirty = true; });
+        erosionToggle.onValueChanged.AddListener(val => { skipErosion = !val; isErosionDirty = true; });
+        sliders[0].onValueChanged.AddListener(val => { resolution = (int)val; isMeshDirty = true; });
+        sliders[1].onValueChanged.AddListener(val => { noiseType = (NoiseType)((int)val); isMeshDirty = true; });
+        sliders[2].onValueChanged.AddListener(val => { noiseScale = val / 10.0f; isMeshDirty = true; });
+        sliders[3].onValueChanged.AddListener(val => { heightMultiplier = val; isMeshDirty = true; });
+        sliders[4].onValueChanged.AddListener(val => { octaves = (int)val; isMeshDirty = true; });
+        sliders[5].onValueChanged.AddListener(val => { persistence = val; isMeshDirty = true; });
+        sliders[6].onValueChanged.AddListener(val => { lacunarity = val; isMeshDirty = true; });
+        sliders[7].onValueChanged.AddListener(val => { warpStrength = val; if (warpFrequency != 0) {isMeshDirty = true;} });
+        sliders[8].onValueChanged.AddListener(val => { warpFrequency = val; if (warpStrength != 0) {isMeshDirty = true;} });
+        sliders[9].onValueChanged.AddListener(val => { smoothingPasses = (int)val; isMeshDirty = true; });
+        sliders[10].onValueChanged.AddListener(val => { numRainDrops = (int)val; isErosionDirty = true; });
+        sliders[11].onValueChanged.AddListener(val => { inertia = val; isErosionDirty = true; });
+        sliders[12].onValueChanged.AddListener(val => { sedimentMax = val; isErosionDirty = true; });
+        sliders[13].onValueChanged.AddListener(val => { depositionRate = val; isErosionDirty = true; });
+        sliders[14].onValueChanged.AddListener(val => { evaporationRate = val; isErosionDirty = true; });
+        sliders[15].onValueChanged.AddListener(val => { softness = 1 - val; isErosionDirty = true; });
+        sliders[16].onValueChanged.AddListener(val => { gravity = val; isErosionDirty = true; });
+        sliders[17].onValueChanged.AddListener(val => { radius = (int)val; isErosionDirty = true; });
+        sliders[18].onValueChanged.AddListener(val => { minSlope = val; isErosionDirty = true; });
+        sliders[19].onValueChanged.AddListener(val => { meshCreator.SetFloat(MaxGrassHeight, val); });
+        sliders[20].onValueChanged.AddListener(val => { meshCreator.SetFloat(Threshold, val); });
+        sliders[21].onValueChanged.AddListener(val => { meshCreator.SetFloat(BlendFactor, val); });
+        sliders[22].onValueChanged.AddListener(val => { meshCreator.SetFloat(FadePower, val); });
 
         
         // Draw with current data on frame 1
-        isDirty = true;
+        isMeshDirty = true;
     }
 
     private void Update()
     {
         // Generates map using current information if the map isn't up-to-date, or already in the middle of generating
-        if (isDirty && !isGenerating)
+        if (!isGenerating && (isMeshDirty || isErosionDirty))
         {
             GenerateMap();
+        }
+    }
+    
+    private void OnApplicationQuit()
+    {
+        // This will be outside the buffer clear logic
+        savedHeightMap?.Release();
+        
+        // Clean up all buffers to prevent memory leaks
+        foreach (ComputeBuffer buffer in activeBuffers)
+        {
+            buffer.Release();
+        }
+        
+        foreach (ComputeBuffer buffer in pendingRelease)
+        {
+            buffer.Release();
         }
     }
 
@@ -163,77 +201,94 @@ public class MeshGenerator : MonoBehaviour
         meshCreator.SetPass(0);
         Graphics.DrawProceduralNow(MeshTopology.Triangles, indexBuffer.count);
     }
-    
-
-    private void OnApplicationQuit()
-    {
-        // Clean up all buffers to prevent memory leaks
-        foreach (ComputeBuffer buffer in activeBuffers)
-        {
-            buffer.Release();
-        }
-        
-        foreach (ComputeBuffer buffer in pendingRelease)
-        {
-            buffer.Release();
-        }
-    }
 
     private void GenerateMap()
     {
         isGenerating = true;
-        isDirty = false;
-        
-        // These will be used for all calls now on so that the player moving the slider won't affect late shader calls
-        dim = resolution;
-        mapLength = (resolution + 1) * (resolution + 1);
-        
-        // Creating new random reference so that I can batch random values. For both noise and erosion
-        _random = new Unity.Mathematics.Random((uint)seed);
+        isErosionDirty = false;
         
         // Swap out old index and vertex buffers to be deleted
         pendingRelease.AddRange(activeBuffers);
         activeBuffers.Clear();
         
-        // Step 1: Calculate a height map
-        noise.ComputeHeightMap(dim + 1, _random, noiseScale, octaves, persistence,
-            lacunarity, offset, (int) noiseType + 1, warpStrength, warpFrequency, smoothingPasses, heightMultiplier, pendingRelease, (map) =>
-            {
-                // Saving the compute buffer to the class
-                heightMap = map;
-                
-                // Set Shared variable
-                meshGenShader.SetInt(NumVertices, mapLength);
-                erosionShader.SetInt(NumVertices, mapLength);
-                meshGenShader.SetInt(Resolution, dim + 1);
-                erosionShader.SetInt(Resolution, dim);
-                
-                // Step 2: Simulate Erosion
-                // Raindrops will be simulated on the terrain. This directly modifies the heightMap
-                ComputeErosion();
-                
-                // Step 3: Get Min and Max Vertex now that nothing else will change the heightmap
-                minMaxBuffer = Noise.PerformReductions(heightMap, activeBuffers, mapLength);
-                
-                // Step 4: Generate Indices
-                // Needs to be done separate from mesh creation, and doesn't use heightMap, so it helps a bit with synchronization (Maybe, probably doesn't matter)
-                GenerateIndices();
-                
-                // Step 5: Generate Mesh Data
-                // Creates a new buffer to hold mesh data that we'll use in the drawing shader. Only Reads the heightMap
-                CreateMeshGPU();
-                
-                // Release all buffers that no longer need to be used
-                foreach (ComputeBuffer buffer in pendingRelease)
-                {
-                    buffer.Release();
-                }
-                pendingRelease.Clear();
-                
-                // Confirm that a new map can be generated next frame if dirty
-                isGenerating = false;
-            }
-        );
+        // These will be used for all calls now on so that the player moving the slider won't affect late shader calls
+        dim = resolution;
+        mapLength = (resolution + 1) * (resolution + 1);
+        
+        // Set Shared variable
+        meshGenShader.SetInt(NumVertices, mapLength);
+        erosionShader.SetInt(NumVertices, mapLength);
+        copyComputeBuffer.SetInt(NumVertices, mapLength);
+        meshGenShader.SetInt(Resolution, dim + 1);
+        erosionShader.SetInt(Resolution, dim);
+        
+        // Creating new random reference so that I can batch random values. For both noise and erosion
+        _random = new Unity.Mathematics.Random((uint)seed);
+        
+        // Step 1: Get a Height Map
+        GetHeightMap();
+        isMeshDirty = false;
+        
+        // Step 2: Simulate Erosion
+        // Raindrops will be simulated on the terrain. This directly modifies the heightMap
+        ComputeErosion();
+        
+        // Step 3: Get Min and Max Vertex now that nothing else will change the heightmap
+        minMaxBuffer = Noise.PerformReductions(heightMap, activeBuffers, mapLength);
+        
+        // Step 4: Generate Indices
+        // Needs to be done separate from mesh creation, and doesn't use heightMap, so it helps a bit with synchronization (Maybe, probably doesn't matter)
+        GenerateIndices();
+        
+        // Step 5: Generate Mesh Data
+        // Creates a new buffer to hold mesh data that we'll use in the drawing shader. Only Reads the heightMap
+        CreateMeshGPU();
+        
+        // Release all buffers that no longer need to be used
+        foreach (ComputeBuffer buffer in pendingRelease)
+        {
+            buffer.Release();
+        }
+        pendingRelease.Clear();
+        
+        // Confirm that a new map can be generated next frame if dirty
+        isGenerating = false;
+    }
+
+    private void GetHeightMap()
+    {
+        if (isMeshDirty)
+        {
+            savedHeightMap?.Release();
+            
+            // A new one will be calculated because mesh parameters changed
+            heightMap = noise.ComputeHeightMap(dim + 1, _random, noiseScale, octaves, persistence,
+                lacunarity, offset, (int) noiseType + 1, warpStrength, warpFrequency, smoothingPasses, heightMultiplier,
+                pendingRelease);
+            
+            // savedHeightMap will copy HeightMap. The reason this is done instead of the other way around is
+            // because ComputeHeightMap, by requirement, will have the newly generated heightmap in the pendingRelease list
+            // heightMap should copy the savedHeightMap
+            savedHeightMap = new ComputeBuffer(mapLength, sizeof(float));
+            #if UNITY_EDITOR // Handled automatically be WebGPU
+            savedHeightMap.SetData(new float[mapLength]);
+            #endif
+            copyComputeBuffer.SetBuffer(0, SourceBuffer, heightMap);
+            copyComputeBuffer.SetBuffer(0, DestinationBuffer, savedHeightMap);
+            copyComputeBuffer.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
+        }
+        else
+        {
+            // heightMap should copy the savedHeightMap
+            heightMap = new ComputeBuffer(mapLength, sizeof(float));
+            #if UNITY_EDITOR // Handled automatically be WebGPU
+            heightMap.SetData(new float[mapLength]);
+            #endif
+            copyComputeBuffer.SetBuffer(0, SourceBuffer, savedHeightMap);
+            copyComputeBuffer.SetBuffer(0, DestinationBuffer, heightMap);
+            copyComputeBuffer.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
+            pendingRelease.Add(heightMap);
+        }
     }
     
     private void CreateMeshGPU()
@@ -292,6 +347,7 @@ public class MeshGenerator : MonoBehaviour
         erosionShader.SetFloat(Softness, softness);
         erosionShader.SetFloat(Gravity,gravity);
         erosionShader.SetFloat(MinSlope, minSlope);
+        erosionShader.SetInt(NumRainDrops, numRainDrops);
         erosionShader.SetInt(Radius, radius); // 0 would be normal square
         erosionShader.SetInt(Seed, _random.NextInt());
         
