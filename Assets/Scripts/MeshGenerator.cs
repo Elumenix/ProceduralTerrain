@@ -34,11 +34,15 @@ public class MeshGenerator : MonoBehaviour
     public bool isMeshDirty;
     [HideInInspector]
     public bool isErosionDirty;
-    private int mapLength;
-    
+    //[HideInInspector]
+    public float angle;
+    private static readonly Vector3 rotOffset = new Vector3(50, 0, 50);
+
+
     // Variables made to help with the async nature of the code
     private int dim;
     private bool isGenerating;
+    private int mapLength;   
     
     // Object reference variables
     public Material meshCreator;
@@ -76,6 +80,7 @@ public class MeshGenerator : MonoBehaviour
     [Range(0, 0.1f)]
     public float minSlope;
     
+    
     #region StringSearchOptimization
     // String search optimization for material shader properties
     private static readonly int MinMaxBuffer = Shader.PropertyToID("_MinMaxBuffer");
@@ -83,6 +88,8 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int Threshold = Shader.PropertyToID("_Threshold");
     private static readonly int BlendFactor = Shader.PropertyToID("_BlendFactor");
     private static readonly int FadePower = Shader.PropertyToID("_FadePower");
+    private static readonly int Rotation = Shader.PropertyToID("_Rotation");
+
     
     // String search optimization for Mesh Creation
     private static readonly int NumVertices = Shader.PropertyToID("numVertices"); 
@@ -194,10 +201,14 @@ public class MeshGenerator : MonoBehaviour
         // It saves us from doing two reduction calls and an async callback (which would cause flickering as the mesh changed)
         //meshCreator.SetFloat(MaxHeight, heightMultiplier + 2);
         //meshCreator.SetFloat(MinHeight, -noiseScale);
+        Matrix4x4 rotationMatrix = Matrix4x4.Translate(rotOffset) * Matrix4x4.Rotate(Quaternion.Euler(0, angle, 0)) *
+                                   Matrix4x4.Translate(-rotOffset);
         
         meshCreator.SetBuffer(VertexDataBuffer, vertexDataBuffer);
         meshCreator.SetBuffer(IndexBuffer, indexBuffer);
         meshCreator.SetBuffer(MinMaxBuffer, minMaxBuffer);
+        meshCreator.SetMatrix(Rotation, rotationMatrix);
+
         meshCreator.SetPass(0);
         Graphics.DrawProceduralNow(MeshTopology.Triangles, indexBuffer.count);
     }

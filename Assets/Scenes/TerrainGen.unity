@@ -984,6 +984,7 @@ MonoBehaviour:
   noiseType: 1
   isMeshDirty: 1
   isErosionDirty: 0
+  angle: 0
   meshCreator: {fileID: 2100000, guid: 6230ec73badf3f04fb216f883cc6fdd3, type: 2}
   meshGenShader: {fileID: 7200000, guid: 4e2bd1e6d165b4745b976030b7d70f71, type: 3}
   erosionShader: {fileID: 7200000, guid: 9a2b9e1704516344dac6b9576fec7c54, type: 3}
@@ -10778,7 +10779,6 @@ GameObject:
   m_Component:
   - component: {fileID: 1227510052}
   - component: {fileID: 1227510051}
-  - component: {fileID: 1227510050}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -10786,14 +10786,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!81 &1227510050
-AudioListener:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1227510049}
-  m_Enabled: 0
 --- !u!20 &1227510051
 Camera:
   m_ObjectHideFlags: 0
@@ -11778,7 +11770,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 0.1886, g: 0.1886, b: 0.1886, a: 0.7490196}
-  m_RaycastTarget: 0
+  m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 0
   m_OnCullStateChanged:
