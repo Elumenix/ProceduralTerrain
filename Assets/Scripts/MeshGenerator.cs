@@ -115,6 +115,7 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int Gravity = Shader.PropertyToID("gravity");
     private static readonly int MinSlope = Shader.PropertyToID("minSlope");
     private static readonly int Seed = Shader.PropertyToID("_seed");
+    private static readonly int BrushBuffer = Shader.PropertyToID("_BrushBuffer");
 
     #endregion
 
@@ -348,9 +349,26 @@ public class MeshGenerator : MonoBehaviour
         {
             return;
         }
+
+        // Precomputing the area around a drop
+        List<int2> brush = new List<int2>();
+        for (int x = -radius; x <= radius; x++)
+        {
+            for (int z = -radius; z <= radius; z++)
+            {
+                brush.Add(new int2(x,z));
+            }
+        }
+            
+        // Having a brush that I can iterate through on the gpu is much more efficient than a double loop on the gpu 
+        ComputeBuffer brushStencil = new ComputeBuffer(brush.Count, sizeof(int) * 2);
+        brushStencil.SetData(brush);
+        pendingRelease.Add(brushStencil);
+        
         
         // Set Variables
         erosionShader.SetBuffer(0, HeightBuffer, heightMap);
+        erosionShader.SetBuffer(0, BrushBuffer, brushStencil);
         erosionShader.SetFloat(Inertia, inertia);
         erosionShader.SetFloat(MaxSediment, sedimentMax);
         erosionShader.SetFloat(DepositionRate, depositionRate);
