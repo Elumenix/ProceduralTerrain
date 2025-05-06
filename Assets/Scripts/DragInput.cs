@@ -1,7 +1,5 @@
-using System;
 using System.Globalization;
 using TMPro;
-using UnityEditor.Searcher;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
@@ -13,32 +11,13 @@ public class DragInput : TMP_InputField
     private float delta;
     private MeshGenerator meshGen;
     private bool isWrapping;
-    private bool dragging = false;
 
     protected override void Awake()
     {
         base.Awake();
         meshGen = FindFirstObjectByType<MeshGenerator>();
     }
-
-    private void Update()
-    {
-        // Mouse was clicked and wasn't over ui that frame means dragging has started
-        if (Input.GetMouseButtonDown(0) && !EventSystem.current.IsPointerOverGameObject())
-        {
-            dragging = true;
-        }
-        else if (dragging && !Input.GetMouseButton(0)) // No longer dragging
-        {
-            dragging = false;
-        }
-
-        if (dragging)
-        {
-            float movement = Input.mousePositionDelta.x;
-            meshGen.angle -= movement * .1f;
-        }
-    }
+    
 
     private void UpdateDelta()
     {

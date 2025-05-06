@@ -2,12 +2,15 @@ using System;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 public class UIManager : MonoBehaviour
 {
     public List<Button> buttons;
     public List<GameObject> panels;
+    private bool dragging;
+    public MeshGenerator meshGen;
 
     public void Start()
     {
@@ -34,6 +37,26 @@ public class UIManager : MonoBehaviour
             panels[1].SetActive(false);
             panels[2].SetActive(true);
         });
+    }
+    
+    private void Update()
+    {
+        // Left mouse button just went down
+        if (Input.GetMouseButtonDown(0))
+        {
+            // Toggle depending on whether or not the mouse is over ui this frame
+            dragging = !EventSystem.current.IsPointerOverGameObject();
+        }
+        else if (dragging && !Input.GetMouseButton(0)) // No longer dragging
+        {
+            dragging = false;
+        }
+
+        if (dragging)
+        {
+            float movement = Input.mousePositionDelta.x;
+            meshGen.angle -= movement * .25f;
+        }
     }
 
     // Method of handling UI inspired by Sebastian Lague
