@@ -78,6 +78,19 @@ public class UIManager : MonoBehaviour
         t.text = text + ": " + n;
     }
     
+    public void SliderValueLiteral (GameObject s) {
+        // Get text component of slider that was just changed
+        var slider = s.GetComponentInChildren<Slider> ();
+        var t = s.GetComponentInChildren<TMP_Text> ();
+        string text = t.text;
+        
+        // Replace number portion of text with the updated number
+        text = text.Substring (0, text.IndexOf (':'));
+        string n = string.Format ("{0:0.##}", slider.value).Replace (',', '.');
+        
+        t.text = text + ": " + n;
+    }
+    
     public void NoiseValue (GameObject s) {
         // Get text component of slider that was just changed
         var slider = s.GetComponentInChildren<Slider> ();

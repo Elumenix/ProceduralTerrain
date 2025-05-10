@@ -16424,7 +16424,7 @@ MonoBehaviour:
       m_Calls:
       - m_Target: {fileID: 791897436}
         m_TargetAssemblyTypeName: UIManager, Assembly-CSharp
-        m_MethodName: SliderValue
+        m_MethodName: SliderValueLiteral
         m_Mode: 2
         m_Arguments:
           m_ObjectArgument: {fileID: 171699715}

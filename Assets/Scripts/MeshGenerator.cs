@@ -34,7 +34,7 @@ public class MeshGenerator : MonoBehaviour
     public bool isMeshDirty;
     [HideInInspector]
     public bool isErosionDirty;
-    //[HideInInspector]
+    [HideInInspector]
     public float angle;
     private static readonly Vector3 rotOffset = new Vector3(50, 0, 50);
 
@@ -126,6 +126,7 @@ public class MeshGenerator : MonoBehaviour
 
     void Start()
     {
+        Application.targetFrameRate = 30;
         activeBuffers = new List<ComputeBuffer>();
         pendingRelease = new List<ComputeBuffer>();
         Camera.main!.depthTextureMode = DepthTextureMode.Depth;
@@ -377,7 +378,7 @@ public class MeshGenerator : MonoBehaviour
         erosionShader.SetFloat(Gravity,gravity);
         erosionShader.SetFloat(MinSlope, minSlope);
         erosionShader.SetInt(NumRainDrops, numRainDrops);
-        erosionShader.SetInt(Radius, radius); // 0 would be normal square
+        erosionShader.SetInt(Radius, radius); 
         erosionShader.SetInt(Seed, _random.NextInt());
         
         // Execute erosion shader
