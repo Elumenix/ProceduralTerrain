@@ -275,8 +275,8 @@ public class MeshGenerator : MonoBehaviour
             savedHeightMap?.Release();
             
             // A new one will be calculated because mesh parameters changed
-            heightMap = noise.ComputeHeightMap(dim + 1, _random, noiseScale, octaves, persistence,
-                lacunarity, offset, (int) noiseType + 1, warpStrength, warpFrequency, smoothingPasses, heightMultiplier,
+            heightMap = noise.ComputeHeightMap(dim + 1, _random, noiseScale, octaves, persistence, lacunarity, offset,
+                (int) noiseType + 1, warpStrength, warpFrequency, smoothingPasses, heightMultiplier, heightCurve,
                 pendingRelease);
             
             // savedHeightMap will copy HeightMap. The reason this is done instead of the other way around is

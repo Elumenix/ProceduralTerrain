@@ -4,6 +4,7 @@
 // Buffers
 RWStructuredBuffer<float> _HeightMapBuffer;
 StructuredBuffer<float2> _RangeValues; // This is essentially float2 {min, max}
+StructuredBuffer<float> _HeightCurveBuffer; // float[128] to sample the animation curve
 
 // Global Variables
 uint numVertices;
@@ -12,7 +13,7 @@ float heightMultiplier;
 
 float InverseLerp(float minHeight, float maxHeight, float value)
 {
-    return ((value - minHeight) / (maxHeight - minHeight)) * heightMultiplier;
+    return (value - minHeight) / (maxHeight - minHeight);
 }  
 
 // The main point of this compute shader is just to normalize the heights of vertices to be between 0 and 1
@@ -24,5 +25,12 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     if (id.x >= numVertices) return;
 
     // Return a value between 0 and 1 based on where the height is between the min and max values
-    _HeightMapBuffer[id.x] = InverseLerp(_RangeValues[0].x, _RangeValues[0].y, _HeightMapBuffer[id.x]);
+    float normalizedHeight = InverseLerp(_RangeValues[0].x, _RangeValues[0].y, _HeightMapBuffer[id.x]);
+
+    // Sample about where on the animation curve this height value would line up with
+    float scaledValue = lerp(0, 127, normalizedHeight);
+    float scaledMultiplier = lerp(_HeightCurveBuffer[floor(scaledValue)], _HeightCurveBuffer[ceil(scaledValue)], frac(scaledValue));
+
+    // Scale the height by the height curve and the height Multiplier
+    _HeightMapBuffer[id.x] = normalizedHeight * scaledMultiplier * heightMultiplier;
 }

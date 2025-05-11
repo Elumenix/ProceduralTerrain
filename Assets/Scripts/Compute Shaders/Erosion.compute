@@ -161,7 +161,8 @@ void SimulateDrop(int x, int y)
 
 
                     // Erode the terrain by the proper amount. Min prevents vertices from going below 0
-                    _HeightBuffer[idx] -= min(erosionAmount * weight, _HeightBuffer[idx]);
+                    //_HeightBuffer[idx] -= min(erosionAmount * weight, _HeightBuffer[idx]);
+                    _HeightBuffer[idx] -= erosionAmount * weight;
                 }
             }
         }

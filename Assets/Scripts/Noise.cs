@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Unity.Mathematics;
@@ -6,7 +5,6 @@ using UnityEngine;
 
 public class Noise : MonoBehaviour
 {
-    //static System.Random rng;
     static float minHeight;
     static float maxHeight;
     public ComputeShader noiseShader;
@@ -33,6 +31,7 @@ public class Noise : MonoBehaviour
     private static readonly int MinMax = Shader.PropertyToID("_MinMax");
     private static readonly int MinMaxInput = Shader.PropertyToID("_MinMaxInput");
     private static readonly int MinMaxResult = Shader.PropertyToID("_MinMaxResult");
+    private static readonly int HeightCurveBuffer = Shader.PropertyToID("_HeightCurveBuffer");
 
 
     [StructLayout(LayoutKind.Sequential)]
@@ -51,7 +50,7 @@ public class Noise : MonoBehaviour
     // Version of this function where we use the gpu asynchronously, which is required for Unity WebGPU beta
     public ComputeBuffer ComputeHeightMap(int mapResolution, Unity.Mathematics.Random _random, float scale,
         int octaves, float persistence, float lacunarity, float2 offset, int noiseType, float warpStrength,
-        float warpFreq, int smoothingPasses, float heightMultiplier, List<ComputeBuffer> pendingRelease)
+        float warpFreq, int smoothingPasses, float heightMultiplier, AnimationCurve heightCurve, List<ComputeBuffer> pendingRelease)
     {
         int mapLength = mapResolution * mapResolution;
         int threadGroups = Mathf.CeilToInt(mapResolution / 16.0f);
@@ -108,10 +107,20 @@ public class Noise : MonoBehaviour
 
         // Get the min/Max values in the mesh in order to perform normalization
         ComputeBuffer finalMinMax = PerformReductions(heightMap, pendingRelease, mapLength);
+
+        ComputeBuffer curveBuffer = new ComputeBuffer(128, sizeof(float));
+        float[] curve = new float[128];
+        for (int i = 0; i < 128; i++)
+        {
+            curve[i] = heightCurve.Evaluate(i / 127.0f);
+        }
+        curveBuffer.SetData(curve);
+        pendingRelease.Add(curveBuffer);
         
-        // NORMALIZATION
+        // NORMALIZATION & HEIGHT SCALE ADJUSTMENT
         normalizationShader.SetBuffer(0, HeightMapBuffer, heightMap);
         normalizationShader.SetBuffer(0, RangeValues, finalMinMax);
+        normalizationShader.SetBuffer(0, HeightCurveBuffer, curveBuffer);
         normalizationShader.SetInt(NumVertices, mapLength);
         normalizationShader.SetFloat(HeightMultiplier, heightMultiplier);
         normalizationShader.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);

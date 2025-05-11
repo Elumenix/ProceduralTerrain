@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using TMPro;
+using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -11,6 +12,12 @@ public class UIManager : MonoBehaviour
     public List<GameObject> panels;
     private bool dragging;
     public MeshGenerator meshGen;
+    public AnimationCurve NeutralCurve;
+    public AnimationCurve MountainCurve;
+    public AnimationCurve PlateauCurve;
+    public AnimationCurve MesaCurve;
+    public AnimationCurve BasinCurve;
+    public AnimationCurve CanyonCurve;
 
     public void Start()
     {
@@ -119,5 +126,51 @@ public class UIManager : MonoBehaviour
         }
         
         t.text = text + ": " + n;
+    }
+    
+    public void HeightCurve (GameObject s) {
+        // Get text component of slider that was just changed
+        var slider = s.GetComponentInChildren<Slider> ();
+        var t = s.GetComponentInChildren<TMP_Text> ();
+        string text = t.text;
+        
+        // Replace number portion of text with the updated number
+        text = text.Substring (0, text.IndexOf (':'));
+        string n;
+        
+        // Get the proper noise type
+        switch (slider.value)
+        {
+            default:
+            case 0:
+                n = "Neutral";
+                meshGen.heightCurve = NeutralCurve;
+                break;
+            
+            case 1:
+                n = "Mountains";
+                meshGen.heightCurve = MountainCurve;
+                break;
+            
+            case 2:
+                n = "Plateaus";
+                meshGen.heightCurve = PlateauCurve;
+                break;
+            case 3:
+                n = "Mesa";
+                meshGen.heightCurve = MesaCurve;
+                break;
+            case 4:
+                n = "Basins";
+                meshGen.heightCurve = BasinCurve;
+                break;
+            case 5:
+                n = "Canyons";
+                meshGen.heightCurve = CanyonCurve;
+                break;
+        }
+        
+        t.text = text + ": " + n;
+        meshGen.isMeshDirty = true;
     }
 }
