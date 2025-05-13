@@ -48,9 +48,10 @@ public class Noise : MonoBehaviour
     }
 
     // Version of this function where we use the gpu asynchronously, which is required for Unity WebGPU beta
-    public ComputeBuffer ComputeHeightMap(int mapResolution, Unity.Mathematics.Random _random, float scale,
-        int octaves, float persistence, float lacunarity, float2 offset, int noiseType, float warpStrength,
-        float warpFreq, int smoothingPasses, float heightMultiplier, AnimationCurve heightCurve, List<ComputeBuffer> pendingRelease)
+    public ComputeBuffer ComputeHeightMap(int mapResolution, Unity.Mathematics.Random _random, float scale, int octaves,
+        float persistence, float lacunarity, float2 offset, int noiseType, float warpStrength, float warpFreq,
+        int smoothingPasses, float heightMultiplier, AnimationCurve heightCurve,
+        List<(int frame, ComputeBuffer buffer)> pendingRelease)
     {
         int mapLength = mapResolution * mapResolution;
         int threadGroups = Mathf.CeilToInt(mapResolution / 16.0f);
@@ -60,7 +61,7 @@ public class Noise : MonoBehaviour
         #if UNITY_EDITOR // Handled automatically be WebGPU
         heightMap.SetData(new float[mapLength]);
         #endif
-        pendingRelease.Add(heightMap);
+        pendingRelease.Add((Time.frameCount, heightMap));
 
 
         // Precompute octave parameters to make shader more efficient
@@ -74,7 +75,7 @@ public class Noise : MonoBehaviour
 
         ComputeBuffer octaveBuffer = new ComputeBuffer(octaves, sizeof(float) * 4); // float2 + float + float
         octaveBuffer.SetData(octParams);
-        pendingRelease.Add(octaveBuffer);
+        pendingRelease.Add((Time.frameCount, octaveBuffer));
 
         // Set Buffers and variables
         noiseShader.SetBuffer(0, HeightMapBuffer, heightMap);
@@ -115,7 +116,7 @@ public class Noise : MonoBehaviour
             curve[i] = heightCurve.Evaluate(i / 127.0f);
         }
         curveBuffer.SetData(curve);
-        pendingRelease.Add(curveBuffer);
+        pendingRelease.Add((Time.frameCount, curveBuffer));
         
         // NORMALIZATION & HEIGHT SCALE ADJUSTMENT
         normalizationShader.SetBuffer(0, HeightMapBuffer, heightMap);
@@ -133,7 +134,7 @@ public class Noise : MonoBehaviour
             #if UNITY_EDITOR // Handled automatically be WebGPU
             writeBuffer.SetData(new float[mapLength]);
             #endif
-            pendingRelease.Add(writeBuffer);
+            pendingRelease.Add((Time.frameCount, writeBuffer));
 
             smoothShader.SetInt(Resolution, mapResolution);
             
@@ -157,7 +158,8 @@ public class Noise : MonoBehaviour
     }
 
     // Essentially gets the min and max values of the mesh
-    public static ComputeBuffer PerformReductions(ComputeBuffer heightMap, List<ComputeBuffer> pendingRelease, int mapLength)
+    public static ComputeBuffer PerformReductions(ComputeBuffer heightMap,
+        List<(int frame, ComputeBuffer buffer)> pendingRelease, int mapLength)
     {
         // REDUCTION PART 1
         // Reduction refers to me iterating the mesh to find the min and max height values
@@ -167,7 +169,7 @@ public class Noise : MonoBehaviour
         #if UNITY_EDITOR // Handled automatically be WebGPU
         minMaxBuffer.SetData(new float2[reductionGroups]);
         #endif
-        pendingRelease.Add(minMaxBuffer);
+        pendingRelease.Add((Time.frameCount, minMaxBuffer));
 
         rangeShader.SetBuffer(0, HeightMapBuffer, heightMap);
         rangeShader.SetBuffer(0, MinMax, minMaxBuffer);
@@ -182,7 +184,47 @@ public class Noise : MonoBehaviour
         #if UNITY_EDITOR // Handled automatically be WebGPU
         finalMinMax.SetData(new float2[1]);
         #endif
-        pendingRelease.Add(finalMinMax);
+        pendingRelease.Add((Time.frameCount, finalMinMax));
+        
+        // Set Data
+        rangeShader.SetInt(NumVertices, reductionGroups);
+        rangeShader.SetBuffer(1, MinMaxInput, minMaxBuffer);
+        rangeShader.SetBuffer(1, MinMaxResult, finalMinMax);
+        
+        // 1 group will handle all remaining elements (up to 2048)
+        rangeShader.Dispatch(1,1,1,1);
+        
+        return finalMinMax;
+    }
+
+    // We'll actually be saving the result of this one for every frame, which is why activeRelease is a part of it
+    public static ComputeBuffer PerformReductions(ComputeBuffer heightMap, List<ComputeBuffer> activeRelease,
+        List<(int frame, ComputeBuffer buffer)> pendingRelease, int mapLength)
+    {
+        // REDUCTION PART 1
+        // Reduction refers to me iterating the mesh to find the min and max height values
+        // This could have been done (with two lines) in the noise shader using atomics IF UNITY'S WEBGPU IMPLEMENTATION SUPPORTED IT
+        int reductionGroups = Mathf.CeilToInt(mapLength / 256.0f);
+        ComputeBuffer minMaxBuffer = new ComputeBuffer(reductionGroups, sizeof(float) * 2); // float2
+        #if UNITY_EDITOR // Handled automatically be WebGPU
+        minMaxBuffer.SetData(new float2[reductionGroups]);
+        #endif
+        pendingRelease.Add((Time.frameCount, minMaxBuffer));
+
+        rangeShader.SetBuffer(0, HeightMapBuffer, heightMap);
+        rangeShader.SetBuffer(0, MinMax, minMaxBuffer);
+        rangeShader.SetInt(NumVertices, mapLength);
+        rangeShader.Dispatch(0, reductionGroups, 1, 1);
+        
+
+        // REDUCTION PART 2
+        // Now that there are up to 2048 reduction groups left, we can do them all in one pass
+        // Note that this would not be the case if the map resolution were above 4096x4096, but that's far higher than the user can go
+        ComputeBuffer finalMinMax = new ComputeBuffer(1, sizeof(float) * 2); // float2
+        #if UNITY_EDITOR // Handled automatically be WebGPU
+        finalMinMax.SetData(new float2[1]);
+        #endif
+        activeRelease.Add(finalMinMax);
         
         // Set Data
         rangeShader.SetInt(NumVertices, reductionGroups);

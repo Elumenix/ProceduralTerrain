@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using Unity.Mathematics;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.UI;
 
 //[ExecuteInEditMode]
@@ -57,7 +59,8 @@ public class MeshGenerator : MonoBehaviour
     private ComputeBuffer minMaxBuffer;
     private ComputeBuffer savedHeightMap;
     private List<ComputeBuffer> activeBuffers;
-    private List<ComputeBuffer> pendingRelease;
+    private List<(int frame, ComputeBuffer buffer)> pendingRelease;
+    private readonly Bounds meshBounds = new Bounds(new Vector3(50, 0, 50), Vector3.one * 100);
 
     
     // Erosion Variables
@@ -128,13 +131,13 @@ public class MeshGenerator : MonoBehaviour
     {
         Application.targetFrameRate = 30;
         activeBuffers = new List<ComputeBuffer>();
-        pendingRelease = new List<ComputeBuffer>();
+        pendingRelease = new List<(int frame, ComputeBuffer buffer)>();
         Camera.main!.depthTextureMode = DepthTextureMode.Depth;
         
         // Default meshShader options (Needed because these change the actual material file)
         meshCreator.SetFloat(MaxGrassHeight, .75f);
-        meshCreator.SetFloat(Threshold, .5f);
-        meshCreator.SetFloat(BlendFactor, .3f);
+        meshCreator.SetFloat(Threshold, .3f);
+        meshCreator.SetFloat(BlendFactor, .75f);
         meshCreator.SetFloat(FadePower, 4.0f);
         
         
@@ -176,8 +179,29 @@ public class MeshGenerator : MonoBehaviour
         {
             GenerateMap();
         }
+        
+        // Set Rotation
+        Matrix4x4 rotationMatrix = Matrix4x4.Translate(rotOffset) * Matrix4x4.Rotate(Quaternion.Euler(0, angle, 0)) *
+                                   Matrix4x4.Translate(-rotOffset);
+        meshCreator.SetMatrix(Rotation, rotationMatrix);
+        
+        // Draw Mesh to Screen
+        Graphics.DrawProcedural(meshCreator, meshBounds, MeshTopology.Triangles, indexBuffer.count);
     }
-    
+
+    private void LateUpdate()
+    {
+        // Release buffers after 3 frames : Should prevent swap-chain errors
+        for (int i = pendingRelease.Count - 1; i >= 0; i--)
+        {
+            if (Time.frameCount - pendingRelease[i].frame <= 3) continue; 
+            
+            // Release and remove Buffer from list
+            pendingRelease[i].buffer.Release(); 
+            pendingRelease.RemoveAt(i);
+        }
+    }
+
     private void OnApplicationQuit()
     {
         // This will be outside the buffer clear logic
@@ -189,30 +213,10 @@ public class MeshGenerator : MonoBehaviour
             buffer.Release();
         }
         
-        foreach (ComputeBuffer buffer in pendingRelease)
+        foreach ((int frame, ComputeBuffer buffer) buffer in pendingRelease)
         {
-            buffer.Release();
+            buffer.buffer.Release();
         }
-    }
-
-    private void OnRenderObject()
-    {
-        if (vertexDataBuffer == null || indexBuffer == null) return;
-        
-        // This is an approximation because it doesn't account for erosion, however, it is fairly accurate
-        // It saves us from doing two reduction calls and an async callback (which would cause flickering as the mesh changed)
-        //meshCreator.SetFloat(MaxHeight, heightMultiplier + 2);
-        //meshCreator.SetFloat(MinHeight, -noiseScale);
-        Matrix4x4 rotationMatrix = Matrix4x4.Translate(rotOffset) * Matrix4x4.Rotate(Quaternion.Euler(0, angle, 0)) *
-                                   Matrix4x4.Translate(-rotOffset);
-        
-        meshCreator.SetBuffer(VertexDataBuffer, vertexDataBuffer);
-        meshCreator.SetBuffer(IndexBuffer, indexBuffer);
-        meshCreator.SetBuffer(MinMaxBuffer, minMaxBuffer);
-        meshCreator.SetMatrix(Rotation, rotationMatrix);
-
-        meshCreator.SetPass(0);
-        Graphics.DrawProceduralNow(MeshTopology.Triangles, indexBuffer.count);
     }
 
     private void GenerateMap()
@@ -221,7 +225,10 @@ public class MeshGenerator : MonoBehaviour
         isErosionDirty = false;
         
         // Swap out old index and vertex buffers to be deleted
-        pendingRelease.AddRange(activeBuffers);
+        foreach (ComputeBuffer buffer in activeBuffers)
+        {
+            pendingRelease.Add((Time.frameCount, buffer));
+        }
         activeBuffers.Clear();
         
         // These will be used for all calls now on so that the player moving the slider won't affect late shader calls
@@ -247,7 +254,7 @@ public class MeshGenerator : MonoBehaviour
         ComputeErosion();
         
         // Step 3: Get Min and Max Vertex now that nothing else will change the heightmap
-        minMaxBuffer = Noise.PerformReductions(heightMap, activeBuffers, mapLength);
+        minMaxBuffer = Noise.PerformReductions(heightMap, activeBuffers, pendingRelease, mapLength);
         
         // Step 4: Generate Indices
         // Needs to be done separate from mesh creation, and doesn't use heightMap, so it helps a bit with synchronization (Maybe, probably doesn't matter)
@@ -257,12 +264,10 @@ public class MeshGenerator : MonoBehaviour
         // Creates a new buffer to hold mesh data that we'll use in the drawing shader. Only Reads the heightMap
         CreateMeshGPU();
         
-        // Release all buffers that no longer need to be used
-        foreach (ComputeBuffer buffer in pendingRelease)
-        {
-            buffer.Release();
-        }
-        pendingRelease.Clear();
+        // Step 6: Set Material Buffers
+        meshCreator.SetBuffer(VertexDataBuffer, vertexDataBuffer);
+        meshCreator.SetBuffer(IndexBuffer, indexBuffer);
+        meshCreator.SetBuffer(MinMaxBuffer, minMaxBuffer);
         
         // Confirm that a new map can be generated next frame if dirty
         isGenerating = false;
@@ -300,7 +305,7 @@ public class MeshGenerator : MonoBehaviour
             copyComputeBuffer.SetBuffer(0, SourceBuffer, savedHeightMap);
             copyComputeBuffer.SetBuffer(0, DestinationBuffer, heightMap);
             copyComputeBuffer.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
-            pendingRelease.Add(heightMap);
+            pendingRelease.Add((Time.frameCount, heightMap));
         }
     }
     
@@ -364,7 +369,7 @@ public class MeshGenerator : MonoBehaviour
         // Having a brush that I can iterate through on the gpu is much more efficient than a double loop on the gpu 
         ComputeBuffer brushStencil = new ComputeBuffer(brush.Count, sizeof(int) * 2);
         brushStencil.SetData(brush);
-        pendingRelease.Add(brushStencil);
+        pendingRelease.Add((Time.frameCount, brushStencil));
         
         
         // Set Variables
