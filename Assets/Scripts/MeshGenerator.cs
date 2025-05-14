@@ -39,6 +39,10 @@ public class MeshGenerator : MonoBehaviour
     [HideInInspector]
     public float angle;
     private static readonly Vector3 rotOffset = new Vector3(50, 0, 50);
+    
+    // Water Variables
+    [Range(0, 1)] 
+    public float waterHeight;
 
 
     // Variables made to help with the async nature of the code
@@ -48,6 +52,7 @@ public class MeshGenerator : MonoBehaviour
     
     // Object reference variables
     public Material meshCreator;
+    public Material waterMaterial;
 
     // Compute Shader Data
     public ComputeShader meshGenShader;
@@ -92,6 +97,7 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int BlendFactor = Shader.PropertyToID("_BlendFactor");
     private static readonly int FadePower = Shader.PropertyToID("_FadePower");
     private static readonly int Rotation = Shader.PropertyToID("_Rotation");
+    private static readonly int WaterHeight = Shader.PropertyToID("_WaterHeight");
 
     
     // String search optimization for Mesh Creation
@@ -165,7 +171,6 @@ public class MeshGenerator : MonoBehaviour
         sliders[19].onValueChanged.AddListener(val => { meshCreator.SetFloat(MaxGrassHeight, val); });
         sliders[20].onValueChanged.AddListener(val => { meshCreator.SetFloat(Threshold, val); });
         sliders[21].onValueChanged.AddListener(val => { meshCreator.SetFloat(BlendFactor, val); });
-        sliders[22].onValueChanged.AddListener(val => { meshCreator.SetFloat(FadePower, val); });
 
         
         // Draw with current data on frame 1
@@ -184,6 +189,11 @@ public class MeshGenerator : MonoBehaviour
         Matrix4x4 rotationMatrix = Matrix4x4.Translate(rotOffset) * Matrix4x4.Rotate(Quaternion.Euler(0, angle, 0)) *
                                    Matrix4x4.Translate(-rotOffset);
         meshCreator.SetMatrix(Rotation, rotationMatrix);
+        
+        // Set Water Variables
+        meshCreator.SetFloat(WaterHeight, waterHeight);
+        waterMaterial.SetFloat(WaterHeight, waterHeight);
+        waterMaterial.SetFloat(Rotation, angle);
         
         // Draw Mesh to Screen
         Graphics.DrawProcedural(meshCreator, meshBounds, MeshTopology.Triangles, indexBuffer.count);
@@ -268,6 +278,7 @@ public class MeshGenerator : MonoBehaviour
         meshCreator.SetBuffer(VertexDataBuffer, vertexDataBuffer);
         meshCreator.SetBuffer(IndexBuffer, indexBuffer);
         meshCreator.SetBuffer(MinMaxBuffer, minMaxBuffer);
+        waterMaterial.SetBuffer(MinMaxBuffer, minMaxBuffer);
         
         // Confirm that a new map can be generated next frame if dirty
         isGenerating = false;
