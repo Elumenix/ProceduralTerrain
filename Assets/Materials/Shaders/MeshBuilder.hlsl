@@ -18,7 +18,8 @@ StructuredBuffer<VertexData> _VertexDataBuffer;
 StructuredBuffer<uint> _IndexBuffer;
 
 // float4x4 Rotation is a Pure Rotation Matrix : Has pivot baked in
-void FixMesh_float(float VertexIDf, float4x4 Rotation, out float3 Position, out float3 Normal, out float3 Tangent, out float3 origPosition)
+// OrigPosition is unused, so it's commented out. This actually represents where the Uv's would be if I needed them
+void FixMesh_float(float VertexIDf, float4x4 Rotation, out float3 Position, out float3 Normal, out float3 Tangent/*, out float3 origPosition*/)
 {
     uint index = (uint)VertexIDf;
     uint vertex = _IndexBuffer[index];
@@ -32,7 +33,7 @@ void FixMesh_float(float VertexIDf, float4x4 Rotation, out float3 Position, out 
     Position = mul(unity_WorldToObject, mul(Rotation, worldPos)).xyz;
     Normal = mul((float3x3)unity_WorldToObject, mul((float3x3)Rotation, worldNormal));
     Tangent = mul((float3x3)unity_WorldToObject, mul((float3x3)Rotation, worldTangent));
-    origPosition = v.position;
+    /*origPosition = v.position;*/
 }
 
 #endif

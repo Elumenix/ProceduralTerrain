@@ -140,8 +140,8 @@ public class MeshGenerator : MonoBehaviour
         Camera.main!.depthTextureMode = DepthTextureMode.Depth;
         
         // Default meshShader options (Needed because these change the actual material file)
-        meshCreator.SetFloat(MaxGrassHeight, .75f);
-        meshCreator.SetFloat(Threshold, .3f);
+        meshCreator.SetFloat(MaxGrassHeight, 1.0f);
+        meshCreator.SetFloat(Threshold, .15f);
         meshCreator.SetFloat(BlendFactor, .75f);
         
         
