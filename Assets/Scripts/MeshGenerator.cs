@@ -95,7 +95,6 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int MaxGrassHeight = Shader.PropertyToID("_MaxGrassHeight");
     private static readonly int Threshold = Shader.PropertyToID("_Threshold");
     private static readonly int BlendFactor = Shader.PropertyToID("_BlendFactor");
-    private static readonly int FadePower = Shader.PropertyToID("_FadePower");
     private static readonly int Rotation = Shader.PropertyToID("_Rotation");
     private static readonly int WaterHeight = Shader.PropertyToID("_WaterHeight");
 
@@ -144,7 +143,6 @@ public class MeshGenerator : MonoBehaviour
         meshCreator.SetFloat(MaxGrassHeight, .75f);
         meshCreator.SetFloat(Threshold, .3f);
         meshCreator.SetFloat(BlendFactor, .75f);
-        meshCreator.SetFloat(FadePower, 4.0f);
         
         
         // Hook up sliders to variables, I'm using inline functions because these are really simple and repetitive

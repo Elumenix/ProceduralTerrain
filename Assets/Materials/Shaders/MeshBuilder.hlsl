@@ -1,4 +1,7 @@
-#include <UnityShaderVariables.cginc>
+#if !defined(UNIVERSAL_LIGHTING_INCLUDED)
+#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+#endif
+
 #ifndef FIX_MESH_CODE
 #define FIX_MESH_CODE
 #pragma target 5.0 // Needed for StructuredBuffer
