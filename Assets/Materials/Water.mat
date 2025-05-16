@@ -100,7 +100,7 @@ Material:
     - _BUILTIN_QueueOffset: 0
     - _BumpScale: 1
     - _Cutoff: 0.5
-    - _Depth: 2
+    - _Depth: 0.6
     - _DetailNormalMapScale: 1
     - _Displacement: 0
     - _DstBlend: 0
@@ -110,20 +110,20 @@ Material:
     - _GlossyReflections: 1
     - _Metallic: 0
     - _Mode: 0
-    - _NormalStrength: 0.844
+    - _NormalStrength: 0.8
     - _OcclusionStrength: 1
     - _Parallax: 0.02
     - _QueueControl: 0
     - _QueueOffset: 0
-    - _Rotation: -16.5
-    - _Smoothness: 0.47
+    - _Rotation: 0
+    - _Smoothness: 0.5
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
     - _Speed: 3.69
     - _SrcBlend: 1
-    - _Strength: 0.31
+    - _Strength: 0.986
     - _UVSec: 0
-    - _WaterHeight: 0.402
+    - _WaterHeight: 0.3
     - _ZWrite: 1
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}

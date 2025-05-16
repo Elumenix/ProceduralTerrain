@@ -1,11 +1,8 @@
-using System;
 using System.Collections.Generic;
 using Unity.Mathematics;
 using UnityEngine;
-using UnityEngine.Rendering;
 using UnityEngine.UI;
 
-//[ExecuteInEditMode]
 public class MeshGenerator : MonoBehaviour
 {
     // Variables Changeable within the editor
@@ -39,10 +36,6 @@ public class MeshGenerator : MonoBehaviour
     [HideInInspector]
     public float angle;
     private static readonly Vector3 rotOffset = new Vector3(50, 0, 50);
-    
-    // Water Variables
-    [Range(0, 1)] 
-    public float waterHeight;
 
 
     // Variables made to help with the async nature of the code
@@ -97,7 +90,7 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int BlendFactor = Shader.PropertyToID("_BlendFactor");
     private static readonly int Rotation = Shader.PropertyToID("_Rotation");
     private static readonly int WaterHeight = Shader.PropertyToID("_WaterHeight");
-
+    private static readonly int Depth = Shader.PropertyToID("_Depth");
     
     // String search optimization for Mesh Creation
     private static readonly int NumVertices = Shader.PropertyToID("numVertices"); 
@@ -143,6 +136,9 @@ public class MeshGenerator : MonoBehaviour
         meshCreator.SetFloat(MaxGrassHeight, 1.0f);
         meshCreator.SetFloat(Threshold, .15f);
         meshCreator.SetFloat(BlendFactor, .75f);
+        waterMaterial.SetFloat(WaterHeight, .3f);
+        meshCreator.SetFloat(WaterHeight, .3f);
+        waterMaterial.SetFloat(Depth, .6f);
         
         
         // Hook up sliders to variables, I'm using inline functions because these are really simple and repetitive
@@ -169,6 +165,9 @@ public class MeshGenerator : MonoBehaviour
         sliders[19].onValueChanged.AddListener(val => { meshCreator.SetFloat(MaxGrassHeight, val); });
         sliders[20].onValueChanged.AddListener(val => { meshCreator.SetFloat(Threshold, val); });
         sliders[21].onValueChanged.AddListener(val => { meshCreator.SetFloat(BlendFactor, val); });
+        sliders[22].onValueChanged.AddListener(val => { waterMaterial.SetFloat(WaterHeight, val); meshCreator.SetFloat(WaterHeight, val); });
+        sliders[23].onValueChanged.AddListener(val => { waterMaterial.SetFloat(Depth, 1.0f - val); });
+
 
         
         // Draw with current data on frame 1
@@ -187,10 +186,6 @@ public class MeshGenerator : MonoBehaviour
         Matrix4x4 rotationMatrix = Matrix4x4.Translate(rotOffset) * Matrix4x4.Rotate(Quaternion.Euler(0, angle, 0)) *
                                    Matrix4x4.Translate(-rotOffset);
         meshCreator.SetMatrix(Rotation, rotationMatrix);
-        
-        // Set Water Variables
-        meshCreator.SetFloat(WaterHeight, waterHeight);
-        waterMaterial.SetFloat(WaterHeight, waterHeight);
         waterMaterial.SetFloat(Rotation, angle);
         
         // Draw Mesh to Screen
