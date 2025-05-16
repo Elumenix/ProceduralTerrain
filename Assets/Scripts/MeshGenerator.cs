@@ -91,6 +91,7 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int Rotation = Shader.PropertyToID("_Rotation");
     private static readonly int WaterHeight = Shader.PropertyToID("_WaterHeight");
     private static readonly int Depth = Shader.PropertyToID("_Depth");
+    private static readonly int WaterEnabled = Shader.PropertyToID("_WaterEnabled");
     
     // String search optimization for Mesh Creation
     private static readonly int NumVertices = Shader.PropertyToID("numVertices"); 
@@ -123,6 +124,7 @@ public class MeshGenerator : MonoBehaviour
     // Using this for inline methods
     public List<Slider> sliders;
     public Toggle erosionToggle;
+    public Toggle waterToggle;
 
 
     void Start()
@@ -143,6 +145,7 @@ public class MeshGenerator : MonoBehaviour
         
         // Hook up sliders to variables, I'm using inline functions because these are really simple and repetitive
         erosionToggle.onValueChanged.AddListener(val => { skipErosion = !val; isErosionDirty = true; });
+        waterToggle.onValueChanged.AddListener(val => { meshCreator.SetFloat(WaterEnabled, val ? 1 : 0); });
         sliders[0].onValueChanged.AddListener(val => { resolution = (int)val; isMeshDirty = true; });
         sliders[1].onValueChanged.AddListener(val => { noiseType = (NoiseType)((int)val); isMeshDirty = true; });
         sliders[2].onValueChanged.AddListener(val => { noiseScale = val / 10.0f; isMeshDirty = true; });
