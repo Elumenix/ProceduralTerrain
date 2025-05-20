@@ -11,6 +11,7 @@ public class UIManager : MonoBehaviour
     public List<Button> buttons;
     public List<GameObject> panels;
     private bool dragging;
+    public Light sceneLight;
     public MeshGenerator meshGen;
     public AnimationCurve NeutralCurve;
     public AnimationCurve MountainCurve;
@@ -18,6 +19,10 @@ public class UIManager : MonoBehaviour
     public AnimationCurve MesaCurve;
     public AnimationCurve BasinCurve;
     public AnimationCurve CanyonCurve;
+    [Range(0,90.0f)]
+    public float xAngle = 30.0f;
+    [Range(0, 360.0f)]
+    public float yAngle = 245.0f;
 
     public void Start()
     {
@@ -51,7 +56,7 @@ public class UIManager : MonoBehaviour
         // Left mouse button just went down
         if (Input.GetMouseButtonDown(0))
         {
-            // Toggle depending on whether or not the mouse is over ui this frame
+            // Toggle depending on whether the mouse is over ui this frame
             dragging = !EventSystem.current.IsPointerOverGameObject();
         }
         else if (dragging && !Input.GetMouseButton(0)) // No longer dragging
@@ -172,5 +177,21 @@ public class UIManager : MonoBehaviour
         
         t.text = text + ": " + n;
         meshGen.isMeshDirty = true;
+    }
+
+    public void ChangeSunHeight(GameObject s)
+    {
+        var slider = s.GetComponentInChildren<Slider>();
+        xAngle = slider.value;
+        
+        sceneLight.transform.eulerAngles = new Vector3(xAngle, yAngle, 0);
+    }
+    
+    public void ChangeSunAngle(GameObject s)
+    {
+        var slider = s.GetComponentInChildren<Slider>();
+        yAngle = slider.value;
+        
+        sceneLight.transform.eulerAngles = new Vector3(xAngle, yAngle, 0);
     }
 }

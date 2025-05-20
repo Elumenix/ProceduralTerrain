@@ -141,6 +141,7 @@ public class MeshGenerator : MonoBehaviour
         waterMaterial.SetFloat(WaterHeight, .3f);
         meshCreator.SetFloat(WaterHeight, .3f);
         waterMaterial.SetFloat(Depth, .6f);
+        meshCreator.SetFloat(WaterEnabled, 1);
         
         
         // Hook up sliders to variables, I'm using inline functions because these are really simple and repetitive
@@ -170,8 +171,6 @@ public class MeshGenerator : MonoBehaviour
         sliders[21].onValueChanged.AddListener(val => { meshCreator.SetFloat(BlendFactor, val); });
         sliders[22].onValueChanged.AddListener(val => { waterMaterial.SetFloat(WaterHeight, val); meshCreator.SetFloat(WaterHeight, val); });
         sliders[23].onValueChanged.AddListener(val => { waterMaterial.SetFloat(Depth, 1.0f - val); });
-
-
         
         // Draw with current data on frame 1
         isMeshDirty = true;
