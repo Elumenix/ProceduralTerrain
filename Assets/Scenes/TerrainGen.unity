@@ -1069,7 +1069,7 @@ MonoBehaviour:
   isMeshDirty: 1
   isErosionDirty: 0
   angle: 0
-  meshCreator: {fileID: 2100000, guid: 6230ec73badf3f04fb216f883cc6fdd3, type: 2}
+  meshCreator: {fileID: 2100000, guid: 8888ff51d5aaa4e44b9420fe6d723e8a, type: 2}
   waterMaterial: {fileID: 2100000, guid: 58631f787c5262a4db48ce9bf0c4a7a2, type: 2}
   meshGenShader: {fileID: 7200000, guid: 4e2bd1e6d165b4745b976030b7d70f71, type: 3}
   erosionShader: {fileID: 7200000, guid: 9a2b9e1704516344dac6b9576fec7c54, type: 3}
