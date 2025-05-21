@@ -36,6 +36,7 @@ public class MeshGenerator : MonoBehaviour
     [HideInInspector]
     public float angle;
     private static readonly Vector3 rotOffset = new Vector3(50, 0, 50);
+    private bool showNoiseMap = false;
 
 
     // Variables made to help with the async nature of the code
@@ -45,6 +46,7 @@ public class MeshGenerator : MonoBehaviour
     
     // Object reference variables
     public Material meshCreator;
+    public Material noiseMaterial;
     public Material waterMaterial;
 
     // Compute Shader Data
@@ -92,6 +94,7 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int WaterHeight = Shader.PropertyToID("_WaterHeight");
     private static readonly int Depth = Shader.PropertyToID("_Depth");
     private static readonly int WaterEnabled = Shader.PropertyToID("_WaterEnabled");
+    private static readonly int Hide = Shader.PropertyToID("_Hide");
     
     // String search optimization for Mesh Creation
     private static readonly int NumVertices = Shader.PropertyToID("numVertices"); 
@@ -124,6 +127,7 @@ public class MeshGenerator : MonoBehaviour
     // Using this for inline methods
     public List<Slider> sliders;
     public Toggle erosionToggle;
+    public Toggle noiseMapToggle;
     public Toggle waterToggle;
 
 
@@ -142,11 +146,17 @@ public class MeshGenerator : MonoBehaviour
         meshCreator.SetFloat(WaterHeight, .3f);
         waterMaterial.SetFloat(Depth, .6f);
         meshCreator.SetFloat(WaterEnabled, 1);
+        waterMaterial.SetFloat(Hide, 0.0f);
         
         
         // Hook up sliders to variables, I'm using inline functions because these are really simple and repetitive
         erosionToggle.onValueChanged.AddListener(val => { skipErosion = !val; isErosionDirty = true; });
         waterToggle.onValueChanged.AddListener(val => { meshCreator.SetFloat(WaterEnabled, val ? 1 : 0); });
+        noiseMapToggle.onValueChanged.AddListener(val =>
+        {
+            showNoiseMap = val;
+            waterMaterial.SetFloat(Hide, val ? 1.0f : 0.0f);
+        });
         sliders[0].onValueChanged.AddListener(val => { resolution = (int)val; isMeshDirty = true; });
         sliders[1].onValueChanged.AddListener(val => { noiseType = (NoiseType)((int)val); isMeshDirty = true; });
         sliders[2].onValueChanged.AddListener(val => { noiseScale = val / 10.0f; isMeshDirty = true; });
@@ -183,15 +193,17 @@ public class MeshGenerator : MonoBehaviour
         {
             GenerateMap();
         }
-        
+
         // Set Rotation
         Matrix4x4 rotationMatrix = Matrix4x4.Translate(rotOffset) * Matrix4x4.Rotate(Quaternion.Euler(0, angle, 0)) *
                                    Matrix4x4.Translate(-rotOffset);
-        meshCreator.SetMatrix(Rotation, rotationMatrix);
+        
+        Material currentMaterial = showNoiseMap ? noiseMaterial : meshCreator;
+        currentMaterial.SetMatrix(Rotation, rotationMatrix);
         waterMaterial.SetFloat(Rotation, angle);
         
         // Draw Mesh to Screen
-        Graphics.DrawProcedural(meshCreator, meshBounds, MeshTopology.Triangles, indexBuffer.count);
+        Graphics.DrawProcedural(currentMaterial, meshBounds, MeshTopology.Triangles, indexBuffer.count);
     }
 
     private void LateUpdate()
@@ -273,6 +285,9 @@ public class MeshGenerator : MonoBehaviour
         meshCreator.SetBuffer(VertexDataBuffer, vertexDataBuffer);
         meshCreator.SetBuffer(IndexBuffer, indexBuffer);
         meshCreator.SetBuffer(MinMaxBuffer, minMaxBuffer);
+        noiseMaterial.SetBuffer(VertexDataBuffer, vertexDataBuffer);
+        noiseMaterial.SetBuffer(IndexBuffer, indexBuffer);
+        noiseMaterial.SetBuffer(MinMaxBuffer, minMaxBuffer);
         waterMaterial.SetBuffer(MinMaxBuffer, minMaxBuffer);
         
         // Confirm that a new map can be generated next frame if dirty

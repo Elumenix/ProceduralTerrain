@@ -28,7 +28,7 @@ Shader "Unlit/HeightMapShader"
             StructuredBuffer<VertexData> _VertexDataBuffer;
             StructuredBuffer<uint> _IndexBuffer;
             StructuredBuffer<float2> _MinMaxBuffer; // This is always size 1
-            float4x4 Rotation;
+            float4x4 _Rotation;
 
             struct VertexInput
             {
@@ -55,7 +55,7 @@ Shader "Unlit/HeightMapShader"
 
                 // Apply transformations
                 float4 worldPos = mul(unity_ObjectToWorld, float4(data.position, 1));
-                float4 rotatedPos = mul(Rotation, worldPos);
+                float4 rotatedPos = mul(_Rotation, worldPos);
                 float4 finalPos = mul(unity_WorldToObject, rotatedPos);
                 
                 // Flatten the mesh in object space
