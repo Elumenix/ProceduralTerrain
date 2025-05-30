@@ -16,7 +16,7 @@ StructuredBuffer<int2> _BrushBuffer;
 uint numRainDrops;
 uint radius;
 uint _seed;
-uint resolution; // width & height (Number of faces, not vertices
+int resolution; // width & height (Number of faces, not vertices
 float inertia;
 float maxSediment;
 float depositionRate;
@@ -24,7 +24,7 @@ float evaporationRate;
 float softness;
 float gravity;
 float minSlope;
-uint brushLength;
+int brushLength;
 
 
 // Precomputed constants
@@ -123,94 +123,82 @@ void SimulateDrop(int x, int y)
 
         // Update flow direction based on gradient
         // Inertia determines how much gradient(terrain directed angle) is taken into account
-        dir = dir * inertia - gradient * invInertia;
-        const float dirLengthSqr = dot(dir,dir);
+        const float2 newDir = dir * inertia - gradient * invInertia;
+        const float dirLengthSqr = dot(newDir,newDir);
         if (dirLengthSqr < EPSILON) return; // We're done if the drop isn't moving
-        dir *= rsqrt(dirLengthSqr) * 0.5f; // Normalize: Drop moves fixed distance of .5f, so erosion is evenly distributed
+        dir = newDir * (rsqrt(dirLengthSqr) * 0.5f); // Normalize: Drop moves fixed distance of .5f, so erosion is evenly distributed
         
         // Data for the next position is found
         const float2 newPos = position + dir;
         const int2 colRow2 = floor(newPos);
-        float newHeight;
-        if (any(colRow2 < 0) || any(colRow2 >= verticesPerRow))
-        {
-            // If we needed to sample out of bounds, assume the same height to give the illusion of infinite terrain
-            newHeight = oldHeight;
-        }
-        else
-        {
-            newHeight = SampleHeight(newPos);
-        }
+
+        // Variables for branchless assignment
+        bool inBounds = all(colRow2 >= 0) && all(colRow2 < verticesPerRow -1); 
+        float inBoundsFloat = float(inBounds); 
+        float sampledHeight = SampleHeight(newPos);
+
+        // If we needed to sample out of bounds, assume the same height to give the illusion of infinite terrain
+        float newHeight = lerp(oldHeight, sampledHeight, inBoundsFloat);
         const float heightDif = newHeight - oldHeight;
 
         // Speed and size of the drop determine how much sediment it can hold
         const float dropCapacity = max(-heightDif, minSlope) * velocity * volume * maxSediment;
+        const bool shouldDeposit = (heightDif > 0.0f) || (sediment > dropCapacity); // is drop ascending or full?
         
-        // is drop ascending or full
-        if (heightDif > 0.0f || sediment > dropCapacity)
+        if (shouldDeposit)
         {
-            float depositAmount;
-            
-            if (heightDif > 0) // Drop was ascending
-            {
-                // Either completely fill pit at oldPos or deposit all sediment there
-                depositAmount = min(sediment, heightDif);
-            }
-            else
-            {
-                // A percentage of the surplus sediment is dropped
-                depositAmount = (sediment - dropCapacity) * depositionRate;    
-            }
+            // Weight Calculations. 
+            const float wTL = invUV.x * invUV.y; // Top Left Weight
+            const float wTR = uv.x * invUV.y;    // Top Right Weight
+            const float wBL = invUV.x * uv.y;    // Bottom Left Weight
+            const float wBR = uv.x * uv.y;       // Bottom Right Weight
 
+            // Both what would happen if the drop is ascending and descending are calculated, so we can do a branchless conditional
+            const float depositAscending = min(sediment, heightDif); // Either completely fill pit at oldPos or deposit all sediment there
+            const float depositSurplus = (sediment - dropCapacity) * depositionRate; // A percentage of the surplus sediment is dropped  
+
+            // This is essentially a bool, 0 if descending, 1 if ascending. Helps with branchless conditionals
+            const float isAscending = saturate(sign(heightDif));
+            const float depositAmount = lerp(depositSurplus, depositAscending, isAscending);
+            
             // Remove the lost sediment from the drop
             sediment -= depositAmount;
             
             // Add it to the vertices of the (square) face the drop is on
             // Weight for each vertex is bilinearly interpolated based on drops position in the face
-            _HeightBuffer[index] += depositAmount * invUV.x * invUV.y;                // Top Left
-            _HeightBuffer[index + 1] += depositAmount * uv.x * invUV.y;               // Top Right
-            _HeightBuffer[index + verticesPerRow] += depositAmount * invUV.x * uv.y;  // Bottom Left
-            _HeightBuffer[index + verticesPerRow + 1] += depositAmount * uv.x * uv.y; // Bottom Right
+            _HeightBuffer[index] += depositAmount * wTL;                      // Top Left
+            _HeightBuffer[index + 1] += depositAmount * wTR;                  // Top Right
+            _HeightBuffer[index + verticesPerRow] += depositAmount * wBL;     // Bottom Left
+            _HeightBuffer[index + verticesPerRow + 1] += depositAmount * wBR; // Bottom Right
         }
         else // downhill and the drop can hold more sediment
         {
             // Amount of sediment to take won't be greater than the height difference
             float erosionAmount = min((dropCapacity - sediment) * softness, -heightDif);
-
-            // Reduce erosion based on how close we are to the map edge, starting at a radius length away
-            // The point of this is to prevent massive ravines forming at the edge of the map as a result of drop pooling
-            /*const float edgeX = min(position.x, resolutionF - position.x);
-            const float edgeY = min(position.y, resolutionF - position.y);
-            const float edgeFactor = smoothstep(0.0f, fRadius, min(edgeX, edgeY));*/
-            float edgeFactor = saturate(min(min(position.x, resolutionF - position.x), 
-                             min(position.y, resolutionF - position.y)) * invRadius);
-            erosionAmount *= edgeFactor;
-
-            // We take full amount as we can't track info for out-of-bounds vertices
             sediment += erosionAmount;
             const float weightedErosionAmount = erosionAmount * invNorm; // Skipping a calculation that would be in the loop
 
-            for (uint vert = 0; vert < brushLength; vert++)
+            for (int vert = 0; vert < brushLength; vert++)
             {
-                const int2 offset = _BrushBuffer[vert];
-                const int r = colRow.y + offset.y;
-                const int c = colRow.x + offset.x;
-                if ((uint)r > resolution || (uint)c > resolution)
-                    continue;
+                const int2 offset = colRow + _BrushBuffer[vert];
+                const bool pointInBounds = all(offset >= 0) && all(offset < verticesPerRow);
+                const float valid = pointInBounds ? 1.0f : 0.0f;
                 
-                const float2 d = position - float2(c, r);
+                const float2 d = position - offset;
                 const float dSquared = dot(d, d);
-                
-                if (dSquared <= radiusSquared)
-                {
-                    // Weight is normalized to be between 0 and 1 then that percentage is multiplied by the total amount eroded
-                    // Because drop is on the map, vertices will be within the radius, so norm is never 0
-                    const float weight = fRadius - sqrt(dSquared);
 
-                    // Erode the terrain by the proper amount. Min prevents vertices from going below 0
-                    //_HeightBuffer[idx] -= min(erosionAmount * weight, _HeightBuffer[idx]);
-                    _HeightBuffer[r * verticesPerRow + c] -= weightedErosionAmount * weight;
-                }
+                // Essentially a bool to check if dSquared <= radiusSquared. If false, will multiply weight by 0
+                const float inRadius = step(dSquared, radiusSquared) * valid;
+
+                // Weight is normalized to be between 0 and 1 then that percentage is multiplied by the total amount eroded
+                // Because drop is on the map, vertices will be within the radius, so norm is never 0
+                const float weight = (fRadius - sqrt(dSquared)) * inRadius;
+
+                // If invalid, will subtract 0 from index 0 (and index which definitely exists), making this loop branchless
+                const int idx = (offset.y * verticesPerRow + offset.x) * valid;
+
+                // Erode the terrain by the proper amount. 
+                _HeightBuffer[idx] -= weightedErosionAmount * weight;
             }
         }
 

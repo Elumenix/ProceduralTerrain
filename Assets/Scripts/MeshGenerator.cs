@@ -407,9 +407,7 @@ public class MeshGenerator : MonoBehaviour
         {
             return;
         }
-
         
-            
         // Having a brush that I can iterate through on the gpu is much more efficient than a double loop on the gpu 
         ComputeBuffer brushStencil = new ComputeBuffer(brush.Count, sizeof(int) * 2);
         brushStencil.SetData(brush);

@@ -29,92 +29,35 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     uint z = id.x / resolution;
     float xPos = x * scale;
     float zPos = z * scale;
-    
     float3 currentVertex = float3(xPos, _HeightMap[id.x], zPos);
-    float3 normalSum = float3(0, 0, 0);
+
+    // Compute clamped neighbor indices. Clamping is necessary so that there's no out of bounds access and some triangles even out
+    uint leftX = max(x-1, 0);
+    uint rightX = min(x+1, resolution-1);
+    uint topY = max(z-1, 0);
+    uint bottomY = min(z+1, resolution-1);
+
+    // The 6 vertices that make up the 6 planar triangles around the current vertex
+    float3 left = float3(leftX * scale, _HeightMap[z * resolution + leftX], zPos);
+    float3 top = float3(xPos, _HeightMap[topY * resolution + x], topY * scale);
+    float3 right = float3(rightX * scale, _HeightMap[z * resolution + rightX], zPos);
+    float3 topRight = float3(rightX * scale, _HeightMap[topY * resolution + rightX], topY * scale);
+    float3 bottom = float3(xPos, _HeightMap[bottomY * resolution + x], bottomY * scale);
+    float3 bottomLeft = float3(leftX * scale, _HeightMap[bottomY * resolution + leftX], bottomY * scale);
+
+    // Get the direction of each triangle. Edge triangles will cancel out because of clamped vertices, saving us from branching
+    float3 cross1 = cross(top - currentVertex, left - currentVertex);          // Triangle 1: Current -> Left -> Top
+    float3 cross2 = cross(topRight - currentVertex, topRight-currentVertex);   // Triangle 2: Current -> Top -> TopRight
+    float3 cross3 = cross(right - currentVertex, topRight - currentVertex);    // Triangle 3: Current -> TopRight -> Right
+    float3 cross4 = cross(bottom - currentVertex, right - currentVertex);      // Triangle 4: Current -> Right -> Bottom
+    float3 cross5 = cross(left - currentVertex, bottomLeft - currentVertex);   // Triangle 1: Current -> BottomLeft -> Left
+    float3 cross6 = cross(bottomLeft - currentVertex, bottom - currentVertex); // Triangle 2: Current -> Bottom -> BottomLeft
     
-    // Check 4 adjacent quads (6 triangles total)
-    // Quad 1: Top-left : Only 1 triangle here because of planar faces
-    if (x > 0 && z > 0)
-    {
-        float3 top = float3(xPos, _HeightMap[id.x - resolution], (z-1) * scale);
-        float3 left = float3((x-1) * scale, _HeightMap[id.x - 1], zPos);
+    // Normal will be the normalized sum of all triangles around the vertex
+    float3 normal = normalize(cross1 + cross2 + cross3 + cross4 + cross5 + cross6);
 
-        // Triangle 1: Current -> Left -> Top
-        float3 AB = top - currentVertex;
-        float3 AC = left - currentVertex;
-        normalSum += cross(AB, AC); 
-    }
-
-    // Quad 2: Top-right
-    if (x < resolution - 1 && z > 0)
-    {
-        float3 top = float3(xPos, _HeightMap[id.x - resolution], (z-1) * scale);
-        float3 right = float3((x+1) * scale, _HeightMap[id.x + 1], zPos);
-        float3 topRight = float3((x+1) * scale, _HeightMap[id.x - resolution + 1], (z-1) * scale);
-
-        
-        // Triangle 1: Current -> Top -> TopRight
-        float3 AB = topRight - currentVertex;
-        float3 AC = top - currentVertex;
-        normalSum += cross(AB, AC);
-        
-        // Triangle 2: Current -> TopRight -> Right
-        AB = right - currentVertex;
-        AC = topRight - currentVertex;
-        normalSum += cross(AB, AC);
-    }
-
-    // Quad 3: Bottom-right : Only 1 triangle because of planer vertices
-    if (x < resolution - 1 && z < resolution - 1)
-    {
-        float3 right = float3((x+1) * scale, _HeightMap[id.x + 1], zPos);
-        float3 bottom = float3(xPos, _HeightMap[id.x + resolution], (z+1) * scale);
-        
-        // Triangle 1: Current -> Right -> Bottom
-        float3 AB = bottom - currentVertex;
-        float3 AC = right - currentVertex;
-        normalSum += cross(AB, AC);
-    }
-
-    // Quad 4: Bottom-left
-    if (x > 0 && z < resolution - 1)
-    {
-        float3 left = float3((x-1) * scale, _HeightMap[id.x - 1], zPos);
-        float3 bottom = float3(xPos, _HeightMap[id.x + resolution], (z+1) * scale);
-        float3 bottomLeft = float3((x-1) * scale, _HeightMap[id.x + resolution - 1], (z+1) * scale);
-        
-        // Triangle 1: Current -> BottomLeft -> Left
-        float3 AB = left - currentVertex;
-        float3 AC = bottomLeft - currentVertex;
-        normalSum += cross(AB, AC);
-        
-        // Triangle 2: Current -> Bottom -> BottomLeft
-        AB = bottomLeft - currentVertex;
-        AC = bottom - currentVertex;
-        normalSum += cross(AB, AC);
-    }
-
-    float3 normal = normalize(normalSum);
-
-    // Essentially get the slope where the vertex is along the x-axis
-    float3 tangent;
-    if (x > 0 && x < resolution - 1) 
-    {
-        float3 rightVertex = float3((x + 1) * scale, _HeightMap[id.x + 1], zPos);
-        float3 leftVertex = float3((x - 1) * scale, _HeightMap[id.x - 1], zPos);
-        tangent = normalize(rightVertex - leftVertex);
-    }
-    else if (x == 0) // Left edge case
-    {
-        float3 rightVertex = float3((x + 1) * scale, _HeightMap[id.x + 1], zPos);
-        tangent = normalize(rightVertex - currentVertex);
-    }
-    else // Right edge case
-    {
-        float3 leftVertex = float3((x - 1) * scale, _HeightMap[id.x - 1], zPos);
-        tangent = normalize(currentVertex - leftVertex);
-    }
+    // Essentially get the slope where the vertex is along the x-axis. A clamped vertex will be equal to the current vertex
+    float3 tangent = right - left;
 
     // Make the tangent Orthogonal to the normal
     tangent = normalize(tangent - dot(tangent, normal) * normal); 
