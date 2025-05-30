@@ -61,7 +61,7 @@ public class MeshGenerator : MonoBehaviour
     private List<ComputeBuffer> activeBuffers;
     private List<(int frame, ComputeBuffer buffer)> pendingRelease;
     private readonly Bounds meshBounds = new Bounds(new Vector3(50, 0, 50), Vector3.one * 100);
-
+    private List<int2> brush;
     
     // Erosion Variables
     public bool skipErosion;
@@ -121,6 +121,7 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int MinSlope = Shader.PropertyToID("minSlope");
     private static readonly int Seed = Shader.PropertyToID("_seed");
     private static readonly int BrushBuffer = Shader.PropertyToID("_BrushBuffer");
+    private static readonly int BrushLength = Shader.PropertyToID("brushLength");
 
     #endregion
 
@@ -138,6 +139,19 @@ public class MeshGenerator : MonoBehaviour
         pendingRelease = new List<(int frame, ComputeBuffer buffer)>();
         Camera.main!.depthTextureMode = DepthTextureMode.Depth;
         
+        // Precomputing the area around a drop
+        brush = new List<int2>();
+        for (int x = -radius; x <= radius; x++)
+        {
+            for (int z = -radius; z <= radius; z++)
+            {
+                if (Mathf.Sqrt(x * x + z * z) < radius)
+                {
+                    brush.Add(new int2(x, z));
+                }
+            }
+        }
+        
         // Default meshShader options (Needed because these change the actual material file)
         meshCreator.SetFloat(MaxGrassHeight, 1.0f);
         meshCreator.SetFloat(Threshold, .15f);
@@ -147,6 +161,7 @@ public class MeshGenerator : MonoBehaviour
         waterMaterial.SetFloat(Depth, .6f);
         meshCreator.SetFloat(WaterEnabled, 1);
         waterMaterial.SetFloat(Hide, 0.0f);
+        waterMaterial.SetFloat(Rotation, angle);
         
         
         // Hook up sliders to variables, I'm using inline functions because these are really simple and repetitive
@@ -174,13 +189,29 @@ public class MeshGenerator : MonoBehaviour
         sliders[14].onValueChanged.AddListener(val => { evaporationRate = val; isErosionDirty = true; });
         sliders[15].onValueChanged.AddListener(val => { softness = 1 - val; isErosionDirty = true; });
         sliders[16].onValueChanged.AddListener(val => { gravity = val; isErosionDirty = true; });
-        sliders[17].onValueChanged.AddListener(val => { radius = (int)val; isErosionDirty = true; });
         sliders[18].onValueChanged.AddListener(val => { minSlope = val; isErosionDirty = true; });
         sliders[19].onValueChanged.AddListener(val => { meshCreator.SetFloat(MaxGrassHeight, val); });
         sliders[20].onValueChanged.AddListener(val => { meshCreator.SetFloat(Threshold, val); });
         sliders[21].onValueChanged.AddListener(val => { meshCreator.SetFloat(BlendFactor, val); });
         sliders[22].onValueChanged.AddListener(val => { waterMaterial.SetFloat(WaterHeight, val); meshCreator.SetFloat(WaterHeight, val); });
         sliders[23].onValueChanged.AddListener(val => { waterMaterial.SetFloat(Depth, 1.0f - val); });
+        sliders[17].onValueChanged.AddListener(val =>
+        {
+            // Recalculating brush stencil
+            brush.Clear();
+            radius = (int) val;
+            isErosionDirty = true;
+            for (int x = -radius; x <= radius; x++)
+            {
+                for (int z = -radius; z <= radius; z++)
+                {
+                    if (Mathf.Sqrt(x * x + z * z) < radius)
+                    {
+                        brush.Add(new int2(x, z));
+                    }
+                }
+            }
+        });
         
         // Draw with current data on frame 1
         isMeshDirty = true;
@@ -208,10 +239,10 @@ public class MeshGenerator : MonoBehaviour
 
     private void LateUpdate()
     {
-        // Release buffers after 3 frames : Should prevent swap-chain errors
+        // Release buffers after 4 frames : Should prevent swap-chain errors
         for (int i = pendingRelease.Count - 1; i >= 0; i--)
         {
-            if (Time.frameCount - pendingRelease[i].frame <= 3) continue; 
+            if (Time.frameCount - pendingRelease[i].frame < 4) continue; 
             
             // Release and remove Buffer from list
             pendingRelease[i].buffer.Release(); 
@@ -377,15 +408,7 @@ public class MeshGenerator : MonoBehaviour
             return;
         }
 
-        // Precomputing the area around a drop
-        List<int2> brush = new List<int2>();
-        for (int x = -radius; x <= radius; x++)
-        {
-            for (int z = -radius; z <= radius; z++)
-            {
-                brush.Add(new int2(x,z));
-            }
-        }
+        
             
         // Having a brush that I can iterate through on the gpu is much more efficient than a double loop on the gpu 
         ComputeBuffer brushStencil = new ComputeBuffer(brush.Count, sizeof(int) * 2);
@@ -405,6 +428,7 @@ public class MeshGenerator : MonoBehaviour
         erosionShader.SetFloat(MinSlope, minSlope);
         erosionShader.SetInt(NumRainDrops, numRainDrops);
         erosionShader.SetInt(Radius, radius); 
+        erosionShader.SetInt(BrushLength, brush.Count);
         erosionShader.SetInt(Seed, _random.NextInt());
         
         // Execute erosion shader
