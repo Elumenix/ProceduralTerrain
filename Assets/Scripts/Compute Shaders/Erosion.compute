@@ -108,7 +108,7 @@ void SimulateDrop(int x, int y)
 
         // We shouldn't continue if the starting position of the drop for this step is already off the map
         // Drops exactly on the right or bottom border should also be considered off because the gradient would consider them at an out-of-bounds cell
-        if (any(colRow < 0) || any(colRow >= verticesPerRow)) return;
+        if (any(colRow < 0) || any(colRow >= resolution)) return;
 
         // Start with getting important variables
         // Position clamping to a valid edge implies there is terrain outside the edge of the map that is a same height
@@ -133,17 +133,17 @@ void SimulateDrop(int x, int y)
         const int2 colRow2 = floor(newPos);
 
         // Variables for branchless assignment
-        bool inBounds = all(colRow2 >= 0) && all(colRow2 < verticesPerRow -1); 
+        bool inBounds = all(colRow2 >= 0) && all(colRow2 < resolution); 
         float inBoundsFloat = float(inBounds); 
         float sampledHeight = SampleHeight(newPos);
 
         // If we needed to sample out of bounds, assume the same height to give the illusion of infinite terrain
         float newHeight = lerp(oldHeight, sampledHeight, inBoundsFloat);
-        const float heightDif = newHeight - oldHeight;
+        float heightDif = newHeight - oldHeight;
 
         // Speed and size of the drop determine how much sediment it can hold
         const float dropCapacity = max(-heightDif, minSlope) * velocity * volume * maxSediment;
-        const bool shouldDeposit = (heightDif > 0.0f) || (sediment > dropCapacity); // is drop ascending or full?
+        const bool shouldDeposit = (heightDif >= 0.0f) || (sediment > dropCapacity); // is drop ascending or full?
         
         if (shouldDeposit)
         {
@@ -181,18 +181,19 @@ void SimulateDrop(int x, int y)
             for (int vert = 0; vert < brushLength; vert++)
             {
                 const int2 offset = colRow + _BrushBuffer[vert];
-                const bool pointInBounds = all(offset >= 0) && all(offset < verticesPerRow);
+                const bool pointInBounds = all(offset >= 0) && all(offset <= resolution);
                 const float valid = pointInBounds ? 1.0f : 0.0f;
                 
                 const float2 d = position - offset;
                 const float dSquared = dot(d, d);
+                const float invDistance = rsqrt(dSquared);
 
                 // Essentially a bool to check if dSquared <= radiusSquared. If false, will multiply weight by 0
                 const float inRadius = step(dSquared, radiusSquared) * valid;
 
                 // Weight is normalized to be between 0 and 1 then that percentage is multiplied by the total amount eroded
                 // Because drop is on the map, vertices will be within the radius, so norm is never 0
-                const float weight = (fRadius - sqrt(dSquared)) * inRadius;
+                const float weight = (fRadius - (dSquared * invDistance)) * inRadius;
 
                 // If invalid, will subtract 0 from index 0 (and index which definitely exists), making this loop branchless
                 const int idx = (offset.y * verticesPerRow + offset.x) * valid;
@@ -203,11 +204,13 @@ void SimulateDrop(int x, int y)
         }
 
         // Velocity is adjusted depending upon the slope and gravity, max prevents negative square root
-        velocity = sqrt(max(0.0f, velocity * velocity + heightDif * -gravity));
+        const float newVelocitySq = max(0, velocity * velocity + heightDif * -gravity);
+        velocity = newVelocitySq * rsqrt(newVelocitySq + 1e-10f);
+            
 
         // Update Position
         position = newPos;
-        volume *= 1.0f - evaporationRate;
+        volume *= evaporationRate;
     }
 }
 

@@ -36,7 +36,7 @@ public class MeshGenerator : MonoBehaviour
     [HideInInspector]
     public float angle;
     private static readonly Vector3 rotOffset = new Vector3(50, 0, 50);
-    private bool showNoiseMap = false;
+    private bool showNoiseMap;
 
 
     // Variables made to help with the async nature of the code
@@ -58,6 +58,7 @@ public class MeshGenerator : MonoBehaviour
     private ComputeBuffer indexBuffer;
     private ComputeBuffer minMaxBuffer;
     private ComputeBuffer savedHeightMap;
+    private ComputeBuffer brushStencil;
     private List<ComputeBuffer> activeBuffers;
     private List<(int frame, ComputeBuffer buffer)> pendingRelease;
     private readonly Bounds meshBounds = new Bounds(new Vector3(50, 0, 50), Vector3.one * 100);
@@ -152,6 +153,10 @@ public class MeshGenerator : MonoBehaviour
             }
         }
         
+        // Having a brush that I can iterate through on the gpu is much more efficient than a double loop on the gpu 
+        brushStencil = new ComputeBuffer(brush.Count, sizeof(int) * 2);
+        brushStencil.SetData(brush);
+        
         // Default meshShader options (Needed because these change the actual material file)
         meshCreator.SetFloat(MaxGrassHeight, 1.0f);
         meshCreator.SetFloat(Threshold, .15f);
@@ -211,6 +216,11 @@ public class MeshGenerator : MonoBehaviour
                     }
                 }
             }
+            
+            // Having a brush that I can iterate through on the gpu is much more efficient than a double loop on the gpu 
+            brushStencil.Release();
+            brushStencil = new ComputeBuffer(brush.Count, sizeof(int) * 2);
+            brushStencil.SetData(brush);
         });
         
         // Draw with current data on frame 1
@@ -254,6 +264,7 @@ public class MeshGenerator : MonoBehaviour
     {
         // This will be outside the buffer clear logic
         savedHeightMap?.Release();
+        brushStencil?.Release();
         
         // Clean up all buffers to prevent memory leaks
         foreach (ComputeBuffer buffer in activeBuffers)
@@ -408,25 +419,19 @@ public class MeshGenerator : MonoBehaviour
             return;
         }
         
-        // Having a brush that I can iterate through on the gpu is much more efficient than a double loop on the gpu 
-        ComputeBuffer brushStencil = new ComputeBuffer(brush.Count, sizeof(int) * 2);
-        brushStencil.SetData(brush);
-        pendingRelease.Add((Time.frameCount, brushStencil));
-        
-        
         // Set Variables
         erosionShader.SetBuffer(0, HeightBuffer, heightMap);
         erosionShader.SetBuffer(0, BrushBuffer, brushStencil);
         erosionShader.SetFloat(Inertia, inertia);
         erosionShader.SetFloat(MaxSediment, sedimentMax);
         erosionShader.SetFloat(DepositionRate, depositionRate);
-        erosionShader.SetFloat(EvaporationRate, evaporationRate);
+        erosionShader.SetFloat(EvaporationRate, 1.0f - evaporationRate);
         erosionShader.SetFloat(Softness, softness);
         erosionShader.SetFloat(Gravity,gravity);
         erosionShader.SetFloat(MinSlope, minSlope);
         erosionShader.SetInt(NumRainDrops, numRainDrops);
         erosionShader.SetInt(Radius, radius); 
-        erosionShader.SetInt(BrushLength, brush.Count);
+        erosionShader.SetInt(BrushLength, brushStencil.count);
         erosionShader.SetInt(Seed, _random.NextInt());
         
         // Execute erosion shader
