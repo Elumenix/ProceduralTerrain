@@ -3,6 +3,7 @@
 #define MAX_UINT 4294967295
 #define EPSILON 1e-6
 #define PI 3.14159265
+#define MAX_BRUSH_LENGTH 320 // A radius of 10 would be 317. 320 is divisible by 64 so this lets me stay in bounds without an if statement
 
 // The following code makes two assumptions
 // 1. This code is Single Execution (Not runtime code, or running every frame)
@@ -24,7 +25,8 @@ float evaporationRate;
 float softness;
 float gravity;
 float minSlope;
-int brushLength;
+uint brushLength;
+int erosionSteps;
 
 
 // Precomputed constants
@@ -38,6 +40,8 @@ static const float radiusSquared = fRadius * fRadius;
 // This is a huge optimization over looping every nearby point, and eliminates the need for two passes
 // This also assumes there would be more points beyond the edge of the map, which is what I want to imply in this implementation
 static const float invNorm = 3.0f / (PI * fRadius * fRadius * fRadius);
+groupshared int2 sharedBrush[MAX_BRUSH_LENGTH];
+groupshared float precomputedWeights[MAX_BRUSH_LENGTH];
 
 // This is essentially GetHeightAndGradient without the gradient part
 float SampleHeight(float2 pos)
@@ -102,7 +106,7 @@ void SimulateDrop(int x, int y)
     
     
     [loop] // Max Steps to ensure drop doesn't move endlessly
-    for (int i = 0; i < 32; i++)
+    for (int i = 0; i < erosionSteps; i++)
     {
         const int2 colRow = floor(position);
 
@@ -178,22 +182,19 @@ void SimulateDrop(int x, int y)
             sediment += erosionAmount;
             const float weightedErosionAmount = erosionAmount * invNorm; // Skipping a calculation that would be in the loop
 
-            for (int vert = 0; vert < brushLength; vert++)
+            for (uint vert = 0; vert < brushLength; vert++)
             {
-                const int2 offset = colRow + _BrushBuffer[vert];
+                const int2 offset = colRow + sharedBrush[vert];
                 const bool pointInBounds = all(offset >= 0) && all(offset <= resolution);
                 const float valid = pointInBounds ? 1.0f : 0.0f;
                 
-                const float2 d = position - offset;
-                const float dSquared = dot(d, d);
-                const float invDistance = rsqrt(dSquared);
+                const float2 distance = position - offset;
+                const float dSquared = dot(distance, distance);
 
-                // Essentially a bool to check if dSquared <= radiusSquared. If false, will multiply weight by 0
-                const float inRadius = step(dSquared, radiusSquared) * valid;
-
-                // Weight is normalized to be between 0 and 1 then that percentage is multiplied by the total amount eroded
-                // Because drop is on the map, vertices will be within the radius, so norm is never 0
-                const float weight = (fRadius - (dSquared * invDistance)) * inRadius;
+                // Position from offset is multiplied by the relative position of the drop to the quad it's in
+                // This weights radius by the drops relative position to each vertex, rather than just the quad
+                const float relativePos = 1.0 - dSquared * rcp(radiusSquared); 
+                const float weight = precomputedWeights[vert] * relativePos * valid;
 
                 // If invalid, will subtract 0 from index 0 (and index which definitely exists), making this loop branchless
                 const int idx = (offset.y * verticesPerRow + offset.x) * valid;
@@ -224,8 +225,19 @@ uint PCG(uint input)
 }
 
 [numthreads(64,1,1)]
-void CSMain (uint3 id : SV_DispatchThreadID)
+void CSMain (uint3 id : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
 {
+    // Preload brush into shared memory, This will be much faster than trying to access the buffer several times later
+    for (uint i = groupIndex; i < brushLength; i += 64) {
+        int2 b = _BrushBuffer[i];
+        sharedBrush[i] = b;
+
+        // Precomputing distance of the current quad to the offset quad by radius, as a base weight
+        // This is used as the base of weighting every erosion iteration, so it saves a lot of time
+        precomputedWeights[i] = fRadius - length(float2(b)); 
+    }
+    GroupMemoryBarrierWithGroupSync();
+    
     if (id.x >= numRainDrops) return; // Don't need to iterate on
 
     uint hashVal = PCG(_seed + id.x);

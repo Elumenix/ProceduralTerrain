@@ -7,7 +7,6 @@ public class MeshGenerator : MonoBehaviour
 {
     // Variables Changeable within the editor
     public Noise noise;
-    public DrawMode drawMode;
     public int resolution;
     public float heightMultiplier;
     public float noiseScale;
@@ -23,9 +22,9 @@ public class MeshGenerator : MonoBehaviour
     public float warpFrequency;
     [Range(0,5)]
     public int smoothingPasses;
+
     public int seed;
     public float2 offset;
-    //public TerrainType[] regions;
     public AnimationCurve heightCurve;
     public NoiseType noiseType;
     private Unity.Mathematics.Random _random;
@@ -83,7 +82,8 @@ public class MeshGenerator : MonoBehaviour
     public int radius;
     [Range(0, 0.1f)]
     public float minSlope;
-    
+    [Range(0, 48)] 
+    public int steps = 32;
     
     #region StringSearchOptimization
     // String search optimization for material shader properties
@@ -123,6 +123,7 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int Seed = Shader.PropertyToID("_seed");
     private static readonly int BrushBuffer = Shader.PropertyToID("_BrushBuffer");
     private static readonly int BrushLength = Shader.PropertyToID("brushLength");
+    private static readonly int ErosionSteps = Shader.PropertyToID("erosionSteps");
 
     #endregion
 
@@ -142,20 +143,7 @@ public class MeshGenerator : MonoBehaviour
         
         // Precomputing the area around a drop
         brush = new List<int2>();
-        for (int x = -radius; x <= radius; x++)
-        {
-            for (int z = -radius; z <= radius; z++)
-            {
-                if (Mathf.Sqrt(x * x + z * z) < radius)
-                {
-                    brush.Add(new int2(x, z));
-                }
-            }
-        }
-        
-        // Having a brush that I can iterate through on the gpu is much more efficient than a double loop on the gpu 
-        brushStencil = new ComputeBuffer(brush.Count, sizeof(int) * 2);
-        brushStencil.SetData(brush);
+        RecalculateBrushStencil(radius);
         
         // Default meshShader options (Needed because these change the actual material file)
         meshCreator.SetFloat(MaxGrassHeight, 1.0f);
@@ -194,39 +182,19 @@ public class MeshGenerator : MonoBehaviour
         sliders[14].onValueChanged.AddListener(val => { evaporationRate = val; isErosionDirty = true; });
         sliders[15].onValueChanged.AddListener(val => { softness = 1 - val; isErosionDirty = true; });
         sliders[16].onValueChanged.AddListener(val => { gravity = val; isErosionDirty = true; });
+        sliders[17].onValueChanged.AddListener(val => { RecalculateBrushStencil((int)val); isErosionDirty = true; });
         sliders[18].onValueChanged.AddListener(val => { minSlope = val; isErosionDirty = true; });
         sliders[19].onValueChanged.AddListener(val => { meshCreator.SetFloat(MaxGrassHeight, val); });
         sliders[20].onValueChanged.AddListener(val => { meshCreator.SetFloat(Threshold, val); });
         sliders[21].onValueChanged.AddListener(val => { meshCreator.SetFloat(BlendFactor, val); });
         sliders[22].onValueChanged.AddListener(val => { waterMaterial.SetFloat(WaterHeight, val); meshCreator.SetFloat(WaterHeight, val); });
         sliders[23].onValueChanged.AddListener(val => { waterMaterial.SetFloat(Depth, 1.0f - val); });
-        sliders[17].onValueChanged.AddListener(val =>
-        {
-            // Recalculating brush stencil
-            brush.Clear();
-            radius = (int) val;
-            isErosionDirty = true;
-            for (int x = -radius; x <= radius; x++)
-            {
-                for (int z = -radius; z <= radius; z++)
-                {
-                    if (Mathf.Sqrt(x * x + z * z) < radius)
-                    {
-                        brush.Add(new int2(x, z));
-                    }
-                }
-            }
-            
-            // Having a brush that I can iterate through on the gpu is much more efficient than a double loop on the gpu 
-            brushStencil.Release();
-            brushStencil = new ComputeBuffer(brush.Count, sizeof(int) * 2);
-            brushStencil.SetData(brush);
-        });
+        sliders[24].onValueChanged.AddListener(val => { steps = (int)val; isErosionDirty = true; });
         
         // Draw with current data on frame 1
         isMeshDirty = true;
     }
-
+    
     private void Update()
     {
         // Generates map using current information if the map isn't up-to-date, or already in the middle of generating
@@ -414,7 +382,7 @@ public class MeshGenerator : MonoBehaviour
     private void ComputeErosion()
     {
         // Buffer will throw error if size 0 
-        if (numRainDrops == 0 || skipErosion)
+        if (numRainDrops == 0 || steps == 0 || skipErosion)
         {
             return;
         }
@@ -433,8 +401,31 @@ public class MeshGenerator : MonoBehaviour
         erosionShader.SetInt(Radius, radius); 
         erosionShader.SetInt(BrushLength, brushStencil.count);
         erosionShader.SetInt(Seed, _random.NextInt());
+        erosionShader.SetInt(ErosionSteps, steps);
         
         // Execute erosion shader
         erosionShader.Dispatch(0, Mathf.CeilToInt(numRainDrops / 64.0f), 1, 1);
+    }
+
+    private void RecalculateBrushStencil(int rad)
+    {
+        // Recalculating brush stencil
+        brush.Clear();
+        radius = rad;
+        for (int x = -radius; x <= radius; x++)
+        {
+            for (int z = -radius; z <= radius; z++)
+            {
+                if (Mathf.Sqrt(x * x + z * z) <= radius)
+                {
+                    brush.Add(new int2(x, z));
+                }
+            }
+        }
+            
+        // Having a brush that I can iterate through on the gpu is much more efficient than a double loop on the gpu 
+        brushStencil?.Release();
+        brushStencil = new ComputeBuffer(brush.Count, sizeof(int) * 2);
+        brushStencil.SetData(brush);
     }
 }
