@@ -3,7 +3,7 @@
 #define MAX_UINT 4294967295
 #define EPSILON 1e-6
 #define PI 3.14159265
-#define MAX_BRUSH_LENGTH 320 // A radius of 10 would be 317. 320 is divisible by 64 so this lets me stay in bounds without an if statement
+#define MAX_BRUSH_LENGTH 384 // A radius of 10 would be 317. 384 is the next number divisible by 128 for proper alignment
 
 // The following code makes two assumptions
 // 1. This code is Single Execution (Not runtime code, or running every frame)
@@ -224,11 +224,11 @@ uint PCG(uint input)
     return (word >> 22u) ^ word;
 }
 
-[numthreads(64,1,1)]
+[numthreads(128,1,1)]
 void CSMain (uint3 id : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
 {
     // Preload brush into shared memory, This will be much faster than trying to access the buffer several times later
-    for (uint i = groupIndex; i < brushLength; i += 64) {
+    for (uint i = groupIndex; i < brushLength; i += 128) {
         int2 b = _BrushBuffer[i];
         sharedBrush[i] = b;
 

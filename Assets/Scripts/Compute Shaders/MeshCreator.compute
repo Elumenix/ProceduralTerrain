@@ -47,7 +47,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 
     // Get the direction of each triangle. Edge triangles will cancel out because of clamped vertices, saving us from branching
     float3 cross1 = cross(top - currentVertex, left - currentVertex);          // Triangle 1: Current -> Left -> Top
-    float3 cross2 = cross(topRight - currentVertex, topRight-currentVertex);   // Triangle 2: Current -> Top -> TopRight
+    float3 cross2 = cross(topRight - currentVertex, top - currentVertex);   // Triangle 2: Current -> Top -> TopRight
     float3 cross3 = cross(right - currentVertex, topRight - currentVertex);    // Triangle 3: Current -> TopRight -> Right
     float3 cross4 = cross(bottom - currentVertex, right - currentVertex);      // Triangle 4: Current -> Right -> Bottom
     float3 cross5 = cross(left - currentVertex, bottomLeft - currentVertex);   // Triangle 1: Current -> BottomLeft -> Left
@@ -55,9 +55,11 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     
     // Normal will be the normalized sum of all triangles around the vertex
     float3 normal = normalize(cross1 + cross2 + cross3 + cross4 + cross5 + cross6);
+    if (x == 0 || z == 0) normal = float3(0,1,0);
 
     // Essentially get the slope where the vertex is along the x-axis. A clamped vertex will be equal to the current vertex
     float3 tangent = right - left;
+    if (x == 0) tangent = float3(1,1,1);
 
     // Make the tangent Orthogonal to the normal
     tangent = normalize(tangent - dot(tangent, normal) * normal); 

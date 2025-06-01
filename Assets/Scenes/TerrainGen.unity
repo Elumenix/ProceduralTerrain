@@ -1228,7 +1228,7 @@ MonoBehaviour:
   erosionShader: {fileID: 7200000, guid: 9a2b9e1704516344dac6b9576fec7c54, type: 3}
   copyComputeBuffer: {fileID: 7200000, guid: 24a56d3b3ff42dc48b15841a14ea88f7, type: 3}
   skipErosion: 0
-  numRainDrops: 1000000
+  numRainDrops: 200000
   inertia: 0.05
   sedimentMax: 4
   depositionRate: 0.3
@@ -4608,9 +4608,9 @@ MonoBehaviour:
   m_HandleRect: {fileID: 290423441}
   m_Direction: 0
   m_MinValue: 0
-  m_MaxValue: 4000000
+  m_MaxValue: 300000
   m_WholeNumbers: 1
-  m_Value: 1000000
+  m_Value: 200000
   m_OnValueChanged:
     m_PersistentCalls:
       m_Calls:
@@ -18493,7 +18493,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: 'Number of Raindrops: 1000k'
+  m_text: 'Number of Raindrops: 200k'
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
