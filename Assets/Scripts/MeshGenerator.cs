@@ -404,7 +404,7 @@ public class MeshGenerator : MonoBehaviour
         erosionShader.SetInt(ErosionSteps, steps);
         
         // Execute erosion shader
-        erosionShader.Dispatch(0, Mathf.CeilToInt(numRainDrops / 128.0f), 1, 1);
+        erosionShader.Dispatch(0, Mathf.CeilToInt(numRainDrops / 64.0f), 1, 1);
     }
 
     private void RecalculateBrushStencil(int rad)

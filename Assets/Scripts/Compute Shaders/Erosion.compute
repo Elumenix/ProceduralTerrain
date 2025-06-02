@@ -3,7 +3,7 @@
 #define MAX_UINT 4294967295
 #define EPSILON 1e-6
 #define PI 3.14159265
-#define MAX_BRUSH_LENGTH 384 // A radius of 10 would be 317. 384 is the next number divisible by 128 for proper alignment
+#define MAX_BRUSH_LENGTH 256 // A radius of 9 would be 253. 256 is the next number divisible by 128 for proper alignment
 
 // The following code makes two assumptions
 // 1. This code is Single Execution (Not runtime code, or running every frame)
@@ -34,20 +34,21 @@ static const float resolutionF = float(resolution);
 static const int verticesPerRow = resolution + 1;
 static const float fRadius = (float)radius + .001; // Needs to prevent division by 0
 static const float invRadius = 1.0f / fRadius;
-static const float invInertia = 1.0f - inertia;
+static const float invInertia = 1.02f - inertia; // Not truly 1 - inertia, otherwise there would be an inertia value of no erosion
 static const float radiusSquared = fRadius * fRadius;
+static const float invRadSquared = 1.0f / radiusSquared;
 // Approximation for the weight of all points within the radius of any arbitrary point
 // This is a huge optimization over looping every nearby point, and eliminates the need for two passes
 // This also assumes there would be more points beyond the edge of the map, which is what I want to imply in this implementation
 static const float invNorm = 3.0f / (PI * fRadius * fRadius * fRadius);
-groupshared int2 sharedBrush[MAX_BRUSH_LENGTH];
-groupshared float precomputedWeights[MAX_BRUSH_LENGTH];
+//groupshared int2 sharedBrush[MAX_BRUSH_LENGTH];
+//groupshared float precomputedWeights[MAX_BRUSH_LENGTH];
 
 // This is essentially GetHeightAndGradient without the gradient part
 float SampleHeight(float2 pos)
 {
     const int2 colRow = floor(pos);
-    const float2 uv = frac(pos);
+    const float2 uv = pos - floor(pos);
     const int index = colRow.y * verticesPerRow + colRow.x;
     
     const float nw = _HeightBuffer[index];
@@ -60,10 +61,7 @@ float SampleHeight(float2 pos)
     const float diffY = sw - nw;
     const float cross = (se - ne) - diffY;
     
-    return nw 
-        + uv.x * diffX 
-        + uv.y * diffY 
-        + (uv.x * uv.y) * cross;
+    return nw + uv.x * diffX + uv.y * diffY + (uv.x * uv.y) * cross;
 }
 
 void GetHeightAndGradient(float2 uv, float2 invUV, int index, out float height, out float2 gradient)
@@ -82,13 +80,9 @@ void GetHeightAndGradient(float2 uv, float2 invUV, int index, out float height, 
     const float cross = diffY2 - diffY1;
 
     // Bilinear Interpolation of heights to get gradient direction and height
-    gradient.x = diffX1 * invUV.y + diffX2 * uv.y;
-    gradient.y = diffY1 * invUV.x + diffY2 * uv.x;
+    gradient = float2(lerp(diffX1, diffX2, uv.y), lerp(diffY1, diffY2, uv.x));
 
-    height = nw 
-        + uv.x * diffX1 
-        + uv.y * diffY1 
-        + (uv.x * uv.y) * cross;
+    height = nw + uv.x * diffX1 + uv.y * diffY1 + (uv.x * uv.y) * cross;
 }
 
 
@@ -117,7 +111,7 @@ void SimulateDrop(int x, int y)
         // Start with getting important variables
         // Position clamping to a valid edge implies there is terrain outside the edge of the map that is a same height
         // Get row/column of top left index of (square) face
-        const float2 uv = frac(position); // sub-coordinate, top-left is (0,0)
+        const float2 uv = position - floor(position); // sub-coordinate, top-left is (0,0)
         const float2 invUV = 1.0f - uv;
         const int index = colRow.y * verticesPerRow + colRow.x;
 
@@ -130,7 +124,7 @@ void SimulateDrop(int x, int y)
         const float2 newDir = dir * inertia - gradient * invInertia;
         const float dirLengthSqr = dot(newDir,newDir);
         if (dirLengthSqr < EPSILON) return; // We're done if the drop isn't moving
-        dir = newDir * (rsqrt(dirLengthSqr) * 0.5f); // Normalize: Drop moves fixed distance of .5f, so erosion is evenly distributed
+        dir = normalize(newDir) * .5f; // Normalize: Drop moves fixed distance of .5f, so erosion is evenly distributed
         
         // Data for the next position is found
         const float2 newPos = position + dir;
@@ -138,18 +132,15 @@ void SimulateDrop(int x, int y)
 
         // Variables for branchless assignment
         bool inBounds = all(colRow2 >= 0) && all(colRow2 < resolution); 
-        float inBoundsFloat = float(inBounds); 
-        float sampledHeight = SampleHeight(newPos);
 
         // If we needed to sample out of bounds, assume the same height to give the illusion of infinite terrain
-        float newHeight = lerp(oldHeight, sampledHeight, inBoundsFloat);
+        float newHeight = inBounds ? SampleHeight(newPos) : oldHeight;
         float heightDif = newHeight - oldHeight;
 
         // Speed and size of the drop determine how much sediment it can hold
         const float dropCapacity = max(-heightDif, minSlope) * velocity * volume * maxSediment;
-        const bool shouldDeposit = (heightDif >= 0.0f) || (sediment > dropCapacity); // is drop ascending or full?
         
-        if (shouldDeposit)
+        if (heightDif >= 0.0f || sediment > dropCapacity)
         {
             // Weight Calculations. 
             const float wTL = invUV.x * invUV.y; // Top Left Weight
@@ -184,20 +175,20 @@ void SimulateDrop(int x, int y)
 
             for (uint vert = 0; vert < brushLength; vert++)
             {
-                const int2 offset = colRow + sharedBrush[vert];
+                const int2 offset = colRow + _BrushBuffer[vert];
                 const bool pointInBounds = all(offset >= 0) && all(offset <= resolution);
-                const float valid = pointInBounds ? 1.0f : 0.0f;
-                
                 const float2 distance = position - offset;
                 const float dSquared = dot(distance, distance);
 
+                // If the point isn't in bounds of the map, or it's outside the radius of the drop, we continue
+                // Purposefully branching here tends to be faster than the computations and global scattered write below
+                if (!(pointInBounds && dSquared <= radiusSquared)) continue;
+
                 // Position from offset is multiplied by the relative position of the drop to the quad it's in
                 // This weights radius by the drops relative position to each vertex, rather than just the quad
-                const float relativePos = 1.0 - dSquared * rcp(radiusSquared); 
-                const float weight = precomputedWeights[vert] * relativePos * valid;
-
-                // If invalid, will subtract 0 from index 0 (and index which definitely exists), making this loop branchless
-                const int idx = (offset.y * verticesPerRow + offset.x) * valid;
+                const float relativePos = 1.0 - dSquared * invRadSquared; 
+                const float weight = (fRadius - sqrt(dSquared)) * relativePos;
+                const int idx = (offset.y * verticesPerRow + offset.x);
 
                 // Erode the terrain by the proper amount. 
                 _HeightBuffer[idx] -= weightedErosionAmount * weight;
@@ -224,19 +215,20 @@ uint PCG(uint input)
     return (word >> 22u) ^ word;
 }
 
-[numthreads(128,1,1)]
+[numthreads(64,1,1)]
 void CSMain (uint3 id : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
 {
     // Preload brush into shared memory, This will be much faster than trying to access the buffer several times later
-    for (uint i = groupIndex; i < brushLength; i += 128) {
+    /*for (uint i = groupIndex; i < brushLength; i += 64) {
         int2 b = _BrushBuffer[i];
-        sharedBrush[i] = b;
+        //sharedBrush[i] = b;
 
         // Precomputing distance of the current quad to the offset quad by radius, as a base weight
         // This is used as the base of weighting every erosion iteration, so it saves a lot of time
-        precomputedWeights[i] = fRadius - length(float2(b)); 
+        float distanceSqr = dot(b,b);
+        precomputedWeights[i] = fRadius - sqrt(distanceSqr); // radius - distance but without sqrt()  
     }
-    GroupMemoryBarrierWithGroupSync();
+    GroupMemoryBarrierWithGroupSync();*/
     
     if (id.x >= numRainDrops) return; // Don't need to iterate on
 
