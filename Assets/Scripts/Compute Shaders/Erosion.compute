@@ -25,24 +25,25 @@ float evaporationRate;
 float softness;
 float gravity;
 float minSlope;
-uint brushLength;
+//uint brushLength;
 int erosionSteps;
 
 
 // Precomputed constants
+static const uint brushLength = (radius + 1) * (radius + 1);
 static const float resolutionF = float(resolution);
 static const int verticesPerRow = resolution + 1;
 static const float fRadius = (float)radius + .001; // Needs to prevent division by 0
 static const float invRadius = 1.0f / fRadius;
-static const float invInertia = 1.02f - inertia; // Not truly 1 - inertia, otherwise there would be an inertia value of no erosion
+//static const float invInertia = 1.02f - inertia; // Not truly 1 - inertia, otherwise there would be an inertia value of no erosion
 static const float radiusSquared = fRadius * fRadius;
 static const float invRadSquared = 1.0f / radiusSquared;
 // Approximation for the weight of all points within the radius of any arbitrary point
 // This is a huge optimization over looping every nearby point, and eliminates the need for two passes
 // This also assumes there would be more points beyond the edge of the map, which is what I want to imply in this implementation
 static const float invNorm = 3.0f / (PI * fRadius * fRadius * fRadius);
-//groupshared int2 sharedBrush[MAX_BRUSH_LENGTH];
-//groupshared float precomputedWeights[MAX_BRUSH_LENGTH];
+groupshared int2 sharedBrush[MAX_BRUSH_LENGTH];
+groupshared float precomputedWeights[MAX_BRUSH_LENGTH];
 
 // This is essentially GetHeightAndGradient without the gradient part
 float SampleHeight(float2 pos)
@@ -64,7 +65,7 @@ float SampleHeight(float2 pos)
     return nw + uv.x * diffX + uv.y * diffY + (uv.x * uv.y) * cross;
 }
 
-void GetHeightAndGradient(float2 uv, float2 invUV, int index, out float height, out float2 gradient)
+void GetHeightAndGradient(float2 uv, int index, out float height, out float2 gradient)
 {
     // Get height of all vertices of quad
     const float nw = _HeightBuffer[index];                       // Top Left
@@ -117,11 +118,11 @@ void SimulateDrop(int x, int y)
 
         float oldHeight;
         float2 gradient;
-        GetHeightAndGradient(uv, invUV, index, oldHeight, gradient);
+        GetHeightAndGradient(uv, index, oldHeight, gradient);
 
         // Update flow direction based on gradient
         // Inertia determines how much gradient(terrain directed angle) is taken into account
-        const float2 newDir = dir * inertia - gradient * invInertia;
+        const float2 newDir = dir * inertia - gradient * (1.02 - inertia);
         const float dirLengthSqr = dot(newDir,newDir);
         if (dirLengthSqr < EPSILON) return; // We're done if the drop isn't moving
         dir = normalize(newDir) * .5f; // Normalize: Drop moves fixed distance of .5f, so erosion is evenly distributed
@@ -140,7 +141,7 @@ void SimulateDrop(int x, int y)
         // Speed and size of the drop determine how much sediment it can hold
         const float dropCapacity = max(-heightDif, minSlope) * velocity * volume * maxSediment;
         
-        if (heightDif >= 0.0f || sediment > dropCapacity)
+        if (heightDif >= 0.0f || sediment >= dropCapacity)
         {
             // Weight Calculations. 
             const float wTL = invUV.x * invUV.y; // Top Left Weight
@@ -172,10 +173,10 @@ void SimulateDrop(int x, int y)
             float erosionAmount = min((dropCapacity - sediment) * softness, -heightDif);
             sediment += erosionAmount;
             const float weightedErosionAmount = erosionAmount * invNorm; // Skipping a calculation that would be in the loop
-
+            [loop]
             for (uint vert = 0; vert < brushLength; vert++)
             {
-                const int2 offset = colRow + _BrushBuffer[vert];
+                const int2 offset = colRow + sharedBrush[vert];
                 const bool pointInBounds = all(offset >= 0) && all(offset <= resolution);
                 const float2 distance = position - offset;
                 const float dSquared = dot(distance, distance);
@@ -187,7 +188,7 @@ void SimulateDrop(int x, int y)
                 // Position from offset is multiplied by the relative position of the drop to the quad it's in
                 // This weights radius by the drops relative position to each vertex, rather than just the quad
                 const float relativePos = 1.0 - dSquared * invRadSquared; 
-                const float weight = (fRadius - sqrt(dSquared)) * relativePos;
+                const float weight = precomputedWeights[vert] * relativePos;
                 const int idx = (offset.y * verticesPerRow + offset.x);
 
                 // Erode the terrain by the proper amount. 
@@ -219,16 +220,16 @@ uint PCG(uint input)
 void CSMain (uint3 id : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
 {
     // Preload brush into shared memory, This will be much faster than trying to access the buffer several times later
-    /*for (uint i = groupIndex; i < brushLength; i += 64) {
+    for (uint i = groupIndex; i < brushLength; i += 64) {
         int2 b = _BrushBuffer[i];
-        //sharedBrush[i] = b;
+        sharedBrush[i] = b;
 
         // Precomputing distance of the current quad to the offset quad by radius, as a base weight
         // This is used as the base of weighting every erosion iteration, so it saves a lot of time
         float distanceSqr = dot(b,b);
         precomputedWeights[i] = fRadius - sqrt(distanceSqr); // radius - distance but without sqrt()  
     }
-    GroupMemoryBarrierWithGroupSync();*/
+    GroupMemoryBarrierWithGroupSync();
     
     if (id.x >= numRainDrops) return; // Don't need to iterate on
 

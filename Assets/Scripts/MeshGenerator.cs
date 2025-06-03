@@ -399,7 +399,7 @@ public class MeshGenerator : MonoBehaviour
         erosionShader.SetFloat(MinSlope, minSlope);
         erosionShader.SetInt(NumRainDrops, numRainDrops);
         erosionShader.SetInt(Radius, radius); 
-        erosionShader.SetInt(BrushLength, brushStencil.count);
+        //erosionShader.SetInt(BrushLength, brushStencil.count);
         erosionShader.SetInt(Seed, _random.NextInt());
         erosionShader.SetInt(ErosionSteps, steps);
         
@@ -416,10 +416,13 @@ public class MeshGenerator : MonoBehaviour
         {
             for (int z = -radius; z <= radius; z++)
             {
-                if (Mathf.Sqrt(x * x + z * z) <= radius)
-                {
+                // If you thought it would be a good idea here to cull whatever elements would never be in the radius,
+                // guess again. The GPU apparently likes guessable numbers, so if you try something that won't
+                // be compile-time constant, the loop won't optimize and everything will be very slow
+                //if (Mathf.Sqrt(x * x + z * z) <= radius)
+                //{
                     brush.Add(new int2(x, z));
-                }
+                //}
             }
         }
             
