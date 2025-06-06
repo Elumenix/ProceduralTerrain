@@ -26,11 +26,30 @@ public class UIManager : MonoBehaviour
 
     public void Start()
     {
+        ColorBlock block = buttons[1].colors;
+        block.colorMultiplier = .8f;
+        buttons[1].colors = block;
         panels[1].SetActive(false);
+
+        block = buttons[2].colors;
+        block.colorMultiplier = .8f;
+        buttons[2].colors = block;
         panels[2].SetActive(false);
 
         buttons[0].onClick.AddListener(() =>
         {
+            block = buttons[0].colors;
+            block.colorMultiplier = 1.0f;
+            buttons[0].colors = block;
+            
+            block = buttons[1].colors;
+            block.colorMultiplier = .8f;
+            buttons[1].colors = block;
+            
+            block = buttons[2].colors;
+            block.colorMultiplier = .8f;
+            buttons[2].colors = block;
+            
             panels[0].SetActive(true);
             panels[1].SetActive(false);
             panels[2].SetActive(false);
@@ -38,6 +57,18 @@ public class UIManager : MonoBehaviour
         
         buttons[1].onClick.AddListener(() =>
         {
+            block = buttons[0].colors;
+            block.colorMultiplier = .8f;
+            buttons[0].colors = block;
+            
+            block = buttons[1].colors;
+            block.colorMultiplier = 1.0f;
+            buttons[1].colors = block;
+            
+            block = buttons[2].colors;
+            block.colorMultiplier = .8f;
+            buttons[2].colors = block;
+            
             panels[0].SetActive(false);
             panels[1].SetActive(true);
             panels[2].SetActive(false);
@@ -45,6 +76,18 @@ public class UIManager : MonoBehaviour
         
         buttons[2].onClick.AddListener(() =>
         {
+            block = buttons[0].colors;
+            block.colorMultiplier = .8f;
+            buttons[0].colors = block;
+            
+            block = buttons[1].colors;
+            block.colorMultiplier = .8f;
+            buttons[1].colors = block;
+            
+            block = buttons[2].colors;
+            block.colorMultiplier = 1.0f;
+            buttons[2].colors = block;
+            
             panels[0].SetActive(false);
             panels[1].SetActive(false);
             panels[2].SetActive(true);
@@ -82,6 +125,24 @@ public class UIManager : MonoBehaviour
         // Replace number portion of text with the updated number
         text = text.Substring (0, text.IndexOf (':'));
         string n = string.Format ("{0:0.##}", slider.value).Replace (',', '.');
+        
+        // Add k when number gets very large to prevent extreme numbers
+        if (slider.value >= 1000) {
+            n = Mathf.RoundToInt (slider.value / 1000) + "k";
+        }
+        t.text = text + ": " + n;
+    }
+    
+    // Same as above, just higher precision on the string
+    public void SliderValueSmall (GameObject s) {
+        // Get text component of slider that was just changed
+        var slider = s.GetComponentInChildren<Slider> ();
+        var t = s.GetComponentInChildren<TMP_Text> ();
+        string text = t.text;
+        
+        // Replace number portion of text with the updated number
+        text = text.Substring (0, text.IndexOf (':'));
+        string n = string.Format ("{0:0.###}", slider.value).Replace (',', '.');
         
         // Add k when number gets very large to prevent extreme numbers
         if (slider.value >= 1000) {
