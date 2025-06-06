@@ -35,7 +35,8 @@ public class MeshGenerator : MonoBehaviour
     [HideInInspector]
     public float angle;
     private static readonly Vector3 rotOffset = new Vector3(50, 0, 50);
-    private bool showNoiseMap;
+    public bool showNoiseMap;
+    public bool showWater = true;
 
 
     // Variables made to help with the async nature of the code
@@ -149,8 +150,8 @@ public class MeshGenerator : MonoBehaviour
         meshCreator.SetFloat(MaxGrassHeight, 1.0f);
         meshCreator.SetFloat(Threshold, .15f);
         meshCreator.SetFloat(BlendFactor, .75f);
-        waterMaterial.SetFloat(WaterHeight, .3f);
-        meshCreator.SetFloat(WaterHeight, .3f);
+        waterMaterial.SetFloat(WaterHeight, .25f);
+        meshCreator.SetFloat(WaterHeight, .25f);
         waterMaterial.SetFloat(Depth, .6f);
         meshCreator.SetFloat(WaterEnabled, 1);
         waterMaterial.SetFloat(Hide, 0.0f);
@@ -159,12 +160,8 @@ public class MeshGenerator : MonoBehaviour
         
         // Hook up sliders to variables, I'm using inline functions because these are really simple and repetitive
         erosionToggle.onValueChanged.AddListener(val => { skipErosion = !val; isErosionDirty = true; });
-        waterToggle.onValueChanged.AddListener(val => { meshCreator.SetFloat(WaterEnabled, val ? 1 : 0); });
-        noiseMapToggle.onValueChanged.AddListener(val =>
-        {
-            showNoiseMap = val;
-            waterMaterial.SetFloat(Hide, val ? 1.0f : 0.0f);
-        });
+        waterToggle.onValueChanged.AddListener(val => { showWater = val; meshCreator.SetFloat(WaterEnabled, val ? 1 : 0); });
+        noiseMapToggle.onValueChanged.AddListener(val => { showNoiseMap = val; waterMaterial.SetFloat(Hide, val ? 1.0f : 0.0f); });
         sliders[0].onValueChanged.AddListener(val => { resolution = (int)val; isMeshDirty = true; });
         sliders[1].onValueChanged.AddListener(val => { noiseType = (NoiseType)((int)val); isMeshDirty = true; });
         sliders[2].onValueChanged.AddListener(val => { noiseScale = val / 10.0f; isMeshDirty = true; });

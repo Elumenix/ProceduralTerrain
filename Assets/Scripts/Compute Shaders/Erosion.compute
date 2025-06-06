@@ -155,7 +155,7 @@ void SimulateDrop(int x, int y)
 
             // This is essentially a bool, 0 if descending, 1 if ascending. Helps with branchless conditionals
             const float isAscending = saturate(sign(heightDif));
-            const float depositAmount = lerp(depositSurplus, depositAscending, isAscending);
+            const float depositAmount = min(sediment, max(lerp(depositSurplus, depositAscending, isAscending), 0));
             
             // Remove the lost sediment from the drop
             sediment -= depositAmount;
@@ -192,6 +192,7 @@ void SimulateDrop(int x, int y)
                 const int idx = (offset.y * verticesPerRow + offset.x);
 
                 // Erode the terrain by the proper amount. 
+                //_HeightBuffer[idx] = max(0, _HeightBuffer[idx] - weightedErosionAmount * weight);
                 _HeightBuffer[idx] -= weightedErosionAmount * weight;
             }
         }

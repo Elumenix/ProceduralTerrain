@@ -1,15 +1,24 @@
 using System;
 using System.Collections.Generic;
 using TMPro;
+using Unity.Mathematics;
 using Unity.VisualScripting;
 using UnityEngine;
+using UnityEngine.AI;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 public class UIManager : MonoBehaviour
 {
+    // Requisite Scene object References
     public List<Button> buttons;
+    public List<DragInput> dragFields;
     public List<GameObject> panels;
+    public Slider noiseTypeSlider;
+    public Slider xAngleSlider;
+    public Slider yAngleSlider;
+
+    
     private bool dragging;
     public Light sceneLight;
     public MeshGenerator meshGen;
@@ -92,6 +101,8 @@ public class UIManager : MonoBehaviour
             panels[1].SetActive(false);
             panels[2].SetActive(true);
         });
+        
+        noiseTypeSlider.onValueChanged.AddListener(_ => HeightCurve());
     }
     
     private void Update()
@@ -127,7 +138,11 @@ public class UIManager : MonoBehaviour
         string n = string.Format ("{0:0.##}", slider.value).Replace (',', '.');
         
         // Add k when number gets very large to prevent extreme numbers
-        if (slider.value >= 1000) {
+        if (slider.value >= 1000000)
+        {
+            n = Mathf.RoundToInt (slider.value / 1000000) + "M";
+        }
+        else if (slider.value >= 1000) {
             n = Mathf.RoundToInt (slider.value / 1000) + "k";
         }
         t.text = text + ": " + n;
@@ -193,11 +208,10 @@ public class UIManager : MonoBehaviour
         
         t.text = text + ": " + n;
     }
-    
-    public void HeightCurve (GameObject s) {
+
+    private void HeightCurve() {
         // Get text component of slider that was just changed
-        var slider = s.GetComponentInChildren<Slider> ();
-        var t = s.GetComponentInChildren<TMP_Text> ();
+        TMP_Text t = noiseTypeSlider.GetComponentInChildren<TMP_Text> ();
         string text = t.text;
         
         // Replace number portion of text with the updated number
@@ -205,7 +219,7 @@ public class UIManager : MonoBehaviour
         string n;
         
         // Get the proper noise type
-        switch (slider.value)
+        switch (noiseTypeSlider.value)
         {
             default:
             case 0:
@@ -254,5 +268,72 @@ public class UIManager : MonoBehaviour
         yAngle = slider.value;
         
         sceneLight.transform.eulerAngles = new Vector3(xAngle, yAngle, 0);
+    }
+    
+    // Resets all values in meshGen, unfortunately I need to access sliders and whatnot, so It can't be a JSON read
+    // While most of this logic is from meshGen, I really want that class to be more focused on logic, so this is here instead
+    public void ResetAllValues()
+    {
+        meshGen.resolution = 512;
+        meshGen.sliders[0].value = 512;
+        meshGen.heightMultiplier = 20.0f;
+        meshGen.sliders[3].value = 20.0f;
+        meshGen.noiseType = NoiseType.Simplex;
+        meshGen.sliders[1].value = 1;
+        meshGen.noiseScale = 0.5f;
+        meshGen.sliders[2].value = 5;
+        meshGen.octaves = 7;
+        meshGen.sliders[4].value = 7;
+        meshGen.persistence = .5f;
+        meshGen.sliders[5].value = .5f;
+        meshGen.lacunarity = 2.0f;
+        meshGen.sliders[6].value = 2.0f;
+        meshGen.warpStrength = 0.2f;
+        meshGen.sliders[7].value = 0.2f;
+        meshGen.warpFrequency = 0.5f;
+        meshGen.sliders[8].value = 0.5f;
+        meshGen.seed = 1174;
+        dragFields[0].text = "1174";
+        meshGen.offset = float2.zero;
+        dragFields[1].text = "0";
+        dragFields[2].text = "0";
+        meshGen.smoothingPasses = 2;
+        meshGen.sliders[9].value = 2;
+        meshGen.skipErosion = false;
+        meshGen.erosionToggle.isOn = true;
+        meshGen.numRainDrops = 200000;
+        meshGen.sliders[10].value = 200000;
+        meshGen.steps = 24;
+        meshGen.sliders[24].value = 24;
+        meshGen.radius = 3;
+        meshGen.sliders[17].value = 3;
+        meshGen.inertia = .05f;
+        meshGen.sliders[11].value = .05f;
+        meshGen.sedimentMax = 4;
+        meshGen.sliders[12].value = 4;
+        meshGen.depositionRate = .3f;
+        meshGen.sliders[13].value = .3f;
+        meshGen.evaporationRate = 0.075f;
+        meshGen.sliders[14].value = 0.075f;
+        meshGen.softness = .2f;
+        meshGen.sliders[15].value = 0.8f;
+        meshGen.gravity = 4;
+        meshGen.sliders[16].value = 4.0f;
+        meshGen.minSlope = .01f;
+        meshGen.sliders[18].value = .01f;
+        meshGen.waterToggle.isOn = true;
+        meshGen.noiseMapToggle.isOn = false;
+        noiseTypeSlider.value = 0;
+        HeightCurve();
+        meshGen.sliders[19].value = 1.0f;
+        meshGen.sliders[20].value = .25f;
+        meshGen.sliders[21].value = .75f;
+        meshGen.sliders[22].value = .25f;
+        meshGen.sliders[23].value = .4f;
+        xAngleSlider.value = 30.0f;
+        yAngleSlider.value = 245.0f;
+        meshGen.angle = 0;
+
+        meshGen.isMeshDirty = true;
     }
 }
