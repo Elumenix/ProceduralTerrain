@@ -1,3 +1,4 @@
+using System;
 using System.Globalization;
 using TMPro;
 using UnityEngine;
@@ -8,16 +9,68 @@ using UnityEngine.InputSystem;
 // The entire point of this class is just so that the number on the text field updates if the user drags it
 public class DragInput : TMP_InputField
 {
+    // Cursor state is shared for all instances
+    private static int hoverCount = 0;
+    private static readonly Vector2 hotspot = new Vector2(16, 16);
+    
     private float delta;
     private MeshGenerator meshGen;
     private bool isWrapping;
+    private Texture2D dragCursor;
+    private bool isDragging = false;
+    private bool isHovering = false;
 
     protected override void Awake()
     {
         base.Awake();
         meshGen = FindFirstObjectByType<MeshGenerator>();
+        
+        
+        dragCursor = Resources.Load<Texture2D>("DragCursor");
     }
     
+    public override void OnPointerEnter(PointerEventData eventData)
+    {
+        base.OnPointerEnter(eventData);
+        hoverCount++;
+        isHovering = true;
+        UpdateCursor();
+    }
+    
+    public override void OnPointerExit(PointerEventData eventData)
+    {
+        base.OnPointerExit(eventData);
+        hoverCount--;
+        isHovering = false;
+        if (!isDragging) UpdateCursor();
+    }
+    
+    public override void OnBeginDrag(PointerEventData eventData)
+    {
+        base.OnBeginDrag(eventData);
+        isDragging = true;
+        UpdateCursor();
+    }
+    
+    public override void OnEndDrag(PointerEventData eventData)
+    {
+        base.OnEndDrag(eventData);
+        isDragging = false;
+        UpdateCursor();
+    }
+
+    private void UpdateCursor()
+    {
+        // If either altering the value or hovering over the field, the drag cursor should be displayed
+        if (isDragging || isHovering)
+        {
+            Cursor.SetCursor(dragCursor, hotspot, CursorMode.ForceSoftware);
+        }
+        else if (hoverCount == 0)
+        {
+            Cursor.SetCursor(null, Vector2.zero, CursorMode.ForceSoftware);
+        }
+    }
 
     private void UpdateDelta()
     {
@@ -40,6 +93,8 @@ public class DragInput : TMP_InputField
     // overriding to keep track of how much the mouse moved rather than just highlighting
     public override void OnDrag(PointerEventData eventData)
     {
+        // Wrapping will unfortunately not work on WebGL or WebGPU due to security restrictions, but it's cool in the engine
+        
         // Skip a frame if we just wrapped to prevent a large jump
         if (isWrapping)
         {
