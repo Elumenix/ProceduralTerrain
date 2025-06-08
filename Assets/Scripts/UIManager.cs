@@ -140,7 +140,7 @@ public class UIManager : MonoBehaviour
         // Add k when number gets very large to prevent extreme numbers
         if (slider.value >= 1000000)
         {
-            n = Mathf.RoundToInt (slider.value / 1000000) + "M";
+            n = (slider.value / 1000000).ToString("F2") + "M";
         }
         else if (slider.value >= 1000) {
             n = Mathf.RoundToInt (slider.value / 1000) + "k";
