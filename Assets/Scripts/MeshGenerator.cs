@@ -123,7 +123,6 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int MinSlope = Shader.PropertyToID("minSlope");
     private static readonly int Seed = Shader.PropertyToID("_seed");
     private static readonly int BrushBuffer = Shader.PropertyToID("_BrushBuffer");
-    private static readonly int BrushLength = Shader.PropertyToID("brushLength");
     private static readonly int ErosionSteps = Shader.PropertyToID("erosionSteps");
 
     #endregion
@@ -137,7 +136,6 @@ public class MeshGenerator : MonoBehaviour
 
     void Start()
     {
-        Application.targetFrameRate = 30;
         activeBuffers = new List<ComputeBuffer>();
         pendingRelease = new List<(int frame, ComputeBuffer buffer)>();
         Camera.main!.depthTextureMode = DepthTextureMode.Depth;
