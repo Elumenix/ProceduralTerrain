@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Unity.Mathematics;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.UI;
 
 public class MeshGenerator : MonoBehaviour
@@ -25,7 +26,6 @@ public class MeshGenerator : MonoBehaviour
 
     public int seed;
     public float2 offset;
-    public AnimationCurve heightCurve;
     public NoiseType noiseType;
     private Unity.Mathematics.Random _random;
     [HideInInspector]
@@ -36,8 +36,6 @@ public class MeshGenerator : MonoBehaviour
     public float angle;
     private static readonly Vector3 rotOffset = new Vector3(50, 0, 50);
     public bool showNoiseMap;
-    public bool showWater = true;
-
 
     // Variables made to help with the async nature of the code
     private int dim;
@@ -59,8 +57,6 @@ public class MeshGenerator : MonoBehaviour
     private ComputeBuffer minMaxBuffer;
     private ComputeBuffer savedHeightMap;
     private ComputeBuffer brushStencil;
-    private List<ComputeBuffer> activeBuffers;
-    private List<(int frame, ComputeBuffer buffer)> pendingRelease;
     private readonly Bounds meshBounds = new Bounds(new Vector3(50, 0, 50), Vector3.one * 100);
     private List<int2> brush;
     
@@ -136,8 +132,7 @@ public class MeshGenerator : MonoBehaviour
 
     void Start()
     {
-        activeBuffers = new List<ComputeBuffer>();
-        pendingRelease = new List<(int frame, ComputeBuffer buffer)>();
+        // Make sure the camera is drawing to the depth texture
         Camera.main!.depthTextureMode = DepthTextureMode.Depth;
         
         // Precomputing the area around a drop
@@ -158,7 +153,7 @@ public class MeshGenerator : MonoBehaviour
         
         // Hook up sliders to variables, I'm using inline functions because these are really simple and repetitive
         erosionToggle.onValueChanged.AddListener(val => { skipErosion = !val; isErosionDirty = true; });
-        waterToggle.onValueChanged.AddListener(val => { showWater = val; meshCreator.SetFloat(WaterEnabled, val ? 1 : 0); });
+        waterToggle.onValueChanged.AddListener(val => { meshCreator.SetFloat(WaterEnabled, val ? 1 : 0); });
         noiseMapToggle.onValueChanged.AddListener(val => { showNoiseMap = val; waterMaterial.SetFloat(Hide, val ? 1.0f : 0.0f); });
         sliders[0].onValueChanged.AddListener(val => { resolution = (int)val; isMeshDirty = true; });
         sliders[1].onValueChanged.AddListener(val => { noiseType = (NoiseType)((int)val); isMeshDirty = true; });
@@ -190,6 +185,16 @@ public class MeshGenerator : MonoBehaviour
         isMeshDirty = true;
     }
     
+    private void OnApplicationQuit()
+    {
+        // Clear all persistent buffers
+        heightMap?.Release();
+        savedHeightMap?.Release();
+        brushStencil?.Release();
+        vertexDataBuffer?.Release();
+        indexBuffer?.Release();
+    }
+    
     private void Update()
     {
         // Generates map using current information if the map isn't up-to-date, or already in the middle of generating
@@ -210,48 +215,12 @@ public class MeshGenerator : MonoBehaviour
         Graphics.DrawProcedural(currentMaterial, meshBounds, MeshTopology.Triangles, indexBuffer.count);
     }
 
-    private void LateUpdate()
-    {
-        // Release buffers after 4 frames : Should prevent swap-chain errors
-        for (int i = pendingRelease.Count - 1; i >= 0; i--)
-        {
-            if (Time.frameCount - pendingRelease[i].frame < 4) continue; 
-            
-            // Release and remove Buffer from list
-            pendingRelease[i].buffer.Release(); 
-            pendingRelease.RemoveAt(i);
-        }
-    }
-
-    private void OnApplicationQuit()
-    {
-        // This will be outside the buffer clear logic
-        savedHeightMap?.Release();
-        brushStencil?.Release();
-        
-        // Clean up all buffers to prevent memory leaks
-        foreach (ComputeBuffer buffer in activeBuffers)
-        {
-            buffer.Release();
-        }
-        
-        foreach ((int frame, ComputeBuffer buffer) buffer in pendingRelease)
-        {
-            buffer.buffer.Release();
-        }
-    }
-
     private void GenerateMap()
     {
+        // Make sure that the program is aware generation is in progress
         isGenerating = true;
         isErosionDirty = false;
         
-        // Swap out old index and vertex buffers to be deleted
-        foreach (ComputeBuffer buffer in activeBuffers)
-        {
-            pendingRelease.Add((Time.frameCount, buffer));
-        }
-        activeBuffers.Clear();
         
         // These will be used for all calls now on so that the player moving the slider won't affect late shader calls
         dim = resolution;
@@ -276,7 +245,7 @@ public class MeshGenerator : MonoBehaviour
         ComputeErosion();
         
         // Step 3: Get Min and Max Vertex now that nothing else will change the heightmap
-        minMaxBuffer = Noise.PerformReductions(heightMap, activeBuffers, pendingRelease, mapLength);
+        minMaxBuffer = Noise.PerformReductions(heightMap, mapLength);
         
         // Step 4: Generate Indices
         // Needs to be done separate from mesh creation, and doesn't use heightMap, so it helps a bit with synchronization (Maybe, probably doesn't matter)
@@ -303,36 +272,42 @@ public class MeshGenerator : MonoBehaviour
     {
         if (isMeshDirty)
         {
-            savedHeightMap?.Release();
+            // Unless the resolution of the map changes, buffers can remain persistent
+            if (heightMap == null || heightMap.count != mapLength)
+            {
+                heightMap?.Release();
+                heightMap = new ComputeBuffer(mapLength, sizeof(int));
+                #if UNITY_EDITOR // Handled automatically be WebGPU
+                heightMap.SetData(new float[mapLength]);
+                #endif
+                
+                // savedHeightMap will copy HeightMap so that we can save time using it later if only erosion parameters change
+                savedHeightMap?.Release();
+                savedHeightMap = new ComputeBuffer(mapLength, sizeof(float));
+                #if UNITY_EDITOR // Handled automatically be WebGPU
+                savedHeightMap.SetData(new float[mapLength]);
+                #endif
+            }
             
-            // A new one will be calculated because mesh parameters changed
-            heightMap = noise.ComputeHeightMap(dim + 1, _random, noiseScale, octaves, persistence, lacunarity, offset,
-                (int) noiseType + 1, warpStrength, warpFrequency, smoothingPasses, heightMultiplier, heightCurve,
-                pendingRelease);
+            // Parameters were changed so a new heightmap will be calculated
+            noise.ComputeHeightMap(ref heightMap, dim + 1, _random, noiseScale, octaves, persistence, lacunarity, offset,
+                (int) noiseType + 1, warpStrength, warpFrequency, smoothingPasses, heightMultiplier);
             
-            // savedHeightMap will copy HeightMap. The reason this is done instead of the other way around is
-            // because ComputeHeightMap, by requirement, will have the newly generated heightmap in the pendingRelease list
-            // heightMap should copy the savedHeightMap
-            savedHeightMap = new ComputeBuffer(mapLength, sizeof(float));
-            #if UNITY_EDITOR // Handled automatically be WebGPU
-            savedHeightMap.SetData(new float[mapLength]);
-            #endif
-            copyComputeBuffer.SetBuffer(0, SourceBuffer, heightMap);
-            copyComputeBuffer.SetBuffer(0, DestinationBuffer, savedHeightMap);
-            copyComputeBuffer.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
+            // The saved heightmap will copy data from the heightmap
+            CopyComputeBuffer(heightMap, savedHeightMap);
         }
         else
         {
-            // heightMap should copy the savedHeightMap
-            heightMap = new ComputeBuffer(mapLength, sizeof(float));
-            #if UNITY_EDITOR // Handled automatically be WebGPU
-            heightMap.SetData(new float[mapLength]);
-            #endif
-            copyComputeBuffer.SetBuffer(0, SourceBuffer, savedHeightMap);
-            copyComputeBuffer.SetBuffer(0, DestinationBuffer, heightMap);
-            copyComputeBuffer.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
-            pendingRelease.Add((Time.frameCount, heightMap));
+            // We'll revert to our already made heightmap
+            CopyComputeBuffer(savedHeightMap, heightMap);
         }
+    }
+
+    private void CopyComputeBuffer(ComputeBuffer src, ComputeBuffer dst)
+    {
+        copyComputeBuffer.SetBuffer(0, SourceBuffer, src);
+        copyComputeBuffer.SetBuffer(0, DestinationBuffer, dst);
+        copyComputeBuffer.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
     }
     
     private void CreateMeshGPU()
@@ -340,13 +315,16 @@ public class MeshGenerator : MonoBehaviour
         // Pass distance between vertices to shader
         meshGenShader.SetFloat(Scale, 100.0f / dim);
         
-        // This will hold vertices, uvs, and the modified heightmap
-        vertexDataBuffer = new ComputeBuffer(mapLength, sizeof(float) * 9); // 3 float3's
-        #if UNITY_EDITOR // Handled automatically be WebGPU
-        vertexDataBuffer.SetData(new VertexData[mapLength]);
-        #endif
-        activeBuffers.Add(vertexDataBuffer);
+        // This will hold vertices, uvs, and the modified heightmap. Only needs to resize if resolution changes
+        if (vertexDataBuffer == null || vertexDataBuffer.count != mapLength)
+        {
+            vertexDataBuffer = new ComputeBuffer(mapLength, sizeof(float) * 9); // 3 float3's
+            #if UNITY_EDITOR // Handled automatically be WebGPU
+            vertexDataBuffer.SetData(new VertexData[mapLength]);
+            #endif
+        }
         
+        // Set Buffers
         meshGenShader.SetBuffer(0, VertexDataBuffer, vertexDataBuffer);
         meshGenShader.SetBuffer(0, HeightMap, heightMap);
         
@@ -359,11 +337,15 @@ public class MeshGenerator : MonoBehaviour
         // Setup
         int numQuads = dim * dim;
         int numIndices = numQuads * 6;
-        indexBuffer = new ComputeBuffer(numIndices, sizeof(uint));
-        #if UNITY_EDITOR // Handled automatically be WebGPU
-        indexBuffer.SetData(new int[numIndices]);
-        #endif
-        activeBuffers.Add(indexBuffer);
+        
+        // Only need to resize buffer if resolution changes
+        if (indexBuffer == null || indexBuffer.count != numIndices)
+        {
+            indexBuffer = new ComputeBuffer(numIndices, sizeof(uint));
+            #if UNITY_EDITOR // Handled automatically be WebGPU
+            indexBuffer.SetData(new int[numIndices]);
+            #endif
+        }
         
         // Set Shader data
         meshGenShader.SetBuffer(1, IndexBuffer, indexBuffer);
@@ -414,10 +396,7 @@ public class MeshGenerator : MonoBehaviour
                 // If you thought it would be a good idea here to cull whatever elements would never be in the radius,
                 // guess again. The GPU apparently likes guessable numbers, so if you try something that won't
                 // be compile-time constant, the loop won't optimize and everything will be very slow
-                //if (Mathf.Sqrt(x * x + z * z) <= radius)
-                //{
                     brush.Add(new int2(x, z));
-                //}
             }
         }
             

@@ -33,6 +33,12 @@ public class UIManager : MonoBehaviour
     [Range(0, 360.0f)]
     public float yAngle = 245.0f;
 
+    private void Awake()
+    {
+        // Need this to be set immediately
+        Noise.ChangeCurve(NeutralCurve);
+    }
+
     public void Start()
     {
         ColorBlock block = buttons[1].colors;
@@ -224,29 +230,29 @@ public class UIManager : MonoBehaviour
             default:
             case 0:
                 n = "Neutral";
-                meshGen.heightCurve = NeutralCurve;
+                Noise.ChangeCurve(NeutralCurve);
                 break;
             
             case 1:
                 n = "Mountains";
-                meshGen.heightCurve = MountainCurve;
+                Noise.ChangeCurve(MountainCurve);
                 break;
             
             case 2:
                 n = "Plateaus";
-                meshGen.heightCurve = PlateauCurve;
+                Noise.ChangeCurve(PlateauCurve);
                 break;
             case 3:
                 n = "Mesa";
-                meshGen.heightCurve = MesaCurve;
+                Noise.ChangeCurve(MesaCurve);
                 break;
             case 4:
                 n = "Basins";
-                meshGen.heightCurve = BasinCurve;
+                Noise.ChangeCurve(BasinCurve);
                 break;
             case 5:
                 n = "Canyons";
-                meshGen.heightCurve = CanyonCurve;
+                Noise.ChangeCurve(CanyonCurve);
                 break;
         }
         

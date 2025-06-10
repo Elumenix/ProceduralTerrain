@@ -48,6 +48,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     //float y = (float)(id.x / mapWidth) - midPoint.y;
     float2 pos = (id.xy - midPoint) / scaleFactor; // How zoomed in
     uint index = id.y * mapWidth + id.x;
+    float height = 0;
     
 
     // warp offset is calculated, the main goal of this is to slightly offset where we're sampling from
@@ -73,6 +74,8 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 
         // Add a scaled value based on amplitude.
         // Range of returned values is insignificant because they will be normalized later
-        _HeightMapBuffer[index] += SAMPLE_NOISE(newPos) * _OctaveBuffer[i].amplitude;
+        height += SAMPLE_NOISE(newPos) * _OctaveBuffer[i].amplitude;
     }
+
+    _HeightMapBuffer[index] = height;
 }
