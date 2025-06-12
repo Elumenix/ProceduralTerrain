@@ -1,4 +1,3 @@
-using System;
 using System.Globalization;
 using TMPro;
 using UnityEngine;
@@ -7,11 +6,12 @@ using UnityEngine.InputSystem;
 
 
 // The entire point of this class is just so that the number on the text field updates if the user drags it
+// As well as to change the cursor while the user is dragging
 public class DragInput : TMP_InputField
 {
     // Cursor state is shared for all instances
     private static int hoverCount = 0;
-    private static readonly Vector2 hotspot = new Vector2(16, 16);
+    private static readonly Vector2 hotspot = new(16, 16);
     
     private float delta;
     private MeshGenerator meshGen;
@@ -24,8 +24,6 @@ public class DragInput : TMP_InputField
     {
         base.Awake();
         meshGen = FindFirstObjectByType<MeshGenerator>();
-        
-        
         dragCursor = Resources.Load<Texture2D>("DragCursor");
     }
     
@@ -34,6 +32,8 @@ public class DragInput : TMP_InputField
         base.OnPointerEnter(eventData);
         hoverCount++;
         isHovering = true;
+        
+        // Need to display the drag cursor at this point
         UpdateCursor();
     }
     
@@ -42,6 +42,8 @@ public class DragInput : TMP_InputField
         base.OnPointerExit(eventData);
         hoverCount--;
         isHovering = false;
+        
+        // Not dragging this field, so we might be able to change back now
         if (!isDragging) UpdateCursor();
     }
     
@@ -49,6 +51,8 @@ public class DragInput : TMP_InputField
     {
         base.OnBeginDrag(eventData);
         isDragging = true;
+        
+        // We're now dragging, so the cursor will stay changed while leaving
         UpdateCursor();
     }
     
@@ -56,6 +60,8 @@ public class DragInput : TMP_InputField
     {
         base.OnEndDrag(eventData);
         isDragging = false;
+        
+        // We've stopped dragging, so the cursor will go back to normal as long as it's not over a different drag field
         UpdateCursor();
     }
 
@@ -76,7 +82,7 @@ public class DragInput : TMP_InputField
     {
         if (delta == 0) return;
         
-        // Decimal should be smaller increments than integer
+        // Decimal should be smaller increments than integers
         if (contentType == ContentType.DecimalNumber)
         {
             text = (float.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture) + delta / 1000).ToString("F3", CultureInfo.InvariantCulture);
@@ -121,7 +127,8 @@ public class DragInput : TMP_InputField
         // This will trigger an event call to update targeted values
         UpdateDelta();
     }
-
+    
+    // Any ui that are using the dragSliders are being updated here
     public void updateSeed(string s)
     {
         if (!int.TryParse(s, out int result) || result == meshGen.seed) return;

@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Runtime.InteropServices;
 using Unity.Mathematics;
 using UnityEngine;
 
@@ -39,18 +36,9 @@ public class Noise : MonoBehaviour
     private static readonly int MinMaxResult = Shader.PropertyToID("_MinMaxResult");
     private static readonly int HeightCurveBuffer = Shader.PropertyToID("_HeightCurveBuffer");
 
-
-    [StructLayout(LayoutKind.Sequential)]
-    struct OctaveParams
-    {
-        public float2 offset;
-        public float frequency;
-        public float amplitude;
-    }
-
     private void Awake()
     {
-        // Because I need it to be static
+        // Because I need it to be static, we transfer the pointer in the awake method
         rangeShader = reductionShader;
         
         // Set up guaranteed persistent buffers
@@ -58,12 +46,13 @@ public class Noise : MonoBehaviour
         curveBuffer = new ComputeBuffer(128, sizeof(float));
         minMax = new ComputeBuffer(1, sizeof(float) * 2); // float2
     }
-
-    // Version of this function where we use the gpu asynchronously, which is required for Unity WebGPU beta
-    public void ComputeHeightMap(ref ComputeBuffer heightMap, int mapResolution, Unity.Mathematics.Random _random, float scale, int octaves,
-        float persistence, float lacunarity, float2 offset, int noiseType, float warpStrength, float warpFreq,
-        int smoothingPasses, float heightMultiplier)
+    
+    // We go through a series of steps generate and normalize a noise map that MeshGenerator can use
+    public void ComputeHeightMap(ref ComputeBuffer heightMap, int mapResolution, Unity.Mathematics.Random _random,
+        float scale, int octaves, float persistence, float lacunarity, float2 offset, int noiseType, float warpStrength,
+        float warpFreq, int smoothingPasses, float heightMultiplier)
     {
+        // We can calculate these early
         int mapLength = mapResolution * mapResolution;
         int threadGroups = Mathf.CeilToInt(mapResolution / 16.0f);
 
@@ -80,15 +69,14 @@ public class Noise : MonoBehaviour
         // Set Buffers and variables
         noiseShader.SetBuffer(0, HeightMapBuffer, heightMap);
         noiseShader.SetBuffer(0, OctaveBuffer, octaveBuffer);
-        //noiseShader.SetInt(NumVertices, mapLength);
         noiseShader.SetInt(MapWidth, mapResolution);
         noiseShader.SetInt(Octaves, octaves);
         noiseShader.SetFloat(ScaleFactor, scale * mapResolution); // Scale is multiplied by mapWidth for consistency
         noiseShader.SetFloat(WarpStrength, warpStrength);
         noiseShader.SetFloat(WarpFrequency, warpFreq);
-        noiseShader.SetFloats(MidPoint, new float[] {mapResolution / 2.0f, mapResolution / 2.0f});
+        noiseShader.SetFloats(MidPoint, new float[] { mapResolution / 2.0f, mapResolution / 2.0f });
 
-        // Set Noise Type
+        // Set Noise Type, this compute shader is set up to switch functions without branching by using multi-compile
         noiseShader.DisableKeyword("_PERLIN");
         noiseShader.DisableKeyword("_SIMPLEX");
         noiseShader.DisableKeyword("_WORLEY");
@@ -104,9 +92,11 @@ public class Noise : MonoBehaviour
                 noiseShader.EnableKeyword("_WORLEY");
                 break;
         }
+        
+        // Create the initial noise map
         noiseShader.Dispatch(0, threadGroups, threadGroups, 1);
 
-        // Get the min/Max values in the mesh in order to perform normalization
+        // Get the Min/Max values in the noise map in order to perform normalization
         PerformReductions(heightMap, mapLength);
         
         // NORMALIZATION & HEIGHT SCALE ADJUSTMENT
@@ -128,7 +118,7 @@ public class Noise : MonoBehaviour
             {
                 writeBuffer?.Release();
                 writeBuffer = new ComputeBuffer(mapLength, sizeof(float));
-                #if UNITY_EDITOR // Handled automatically be WebGPU
+                #if UNITY_EDITOR // Handled automatically by WebGPU
                 writeBuffer.SetData(new float[mapLength]);
                 #endif
             }
@@ -139,13 +129,15 @@ public class Noise : MonoBehaviour
                 smoothShader.SetBuffer(0, WriteBuffer, writeBuffer);
                 smoothShader.Dispatch(0, threadGroups, threadGroups, 1);
 
-                // Swap Buffers so that readBuffer hold proper data (sets up next pass and return)
+                // Swap Buffers so that readBuffer holds proper data (sets up next pass and return)
                 // Buffers are essentially just pointers, so this is safe and not corrupting data
                 (readBuffer, writeBuffer) = (writeBuffer, readBuffer);
 
                 smoothingPasses--;
             }
             
+            // Finally assign the heightmap. We don't need to do anything further because it's 
+            // a reference that MeshGenerator will now have the final result to 
             heightMap = readBuffer;
         }
     }
@@ -186,12 +178,13 @@ public class Noise : MonoBehaviour
         
         // 1 group will handle all remaining elements (up to 2048)
         rangeShader.Dispatch(1,1,1,1);
-        
         return minMax;
     }
 
+    // Precomputing the height curve that will be used during the normalization shader
     public static void ChangeCurve(AnimationCurve heightCurve)
     {
+        // AnimationCurve was used to design the curve because it's quick and easy to work with and evaluate
         float[] curve = new float[128];
         for (int i = 0; i < 128; i++)
         {
@@ -202,11 +195,11 @@ public class Noise : MonoBehaviour
 
     private void OnApplicationQuit()
     {
+        // Release all buffers so that we have no memory leaks
         octaveBuffer.Release();
         curveBuffer.Release();
         minMax.Release();
         writeBuffer.Release();
         reductionBuffer.Release();
     }
-    
 }

@@ -53,7 +53,6 @@ void HeightMapReduction (uint3 groupId : SV_GroupID, uint groupIndex : SV_GroupI
         // This is not thread local (we're changing values other threads will read)
         GroupMemoryBarrierWithGroupSync();
     }
-
     
     // Write group result to global buffer
     // This was only the Min/Max of this thread group

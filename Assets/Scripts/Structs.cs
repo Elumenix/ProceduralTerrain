@@ -32,3 +32,11 @@ struct VertexData
     public float3 normal;
     public float3 tangent;
 }
+
+[StructLayout(LayoutKind.Sequential)]
+struct OctaveParams
+{
+    public float2 offset;
+    public float frequency;
+    public float amplitude;
+}

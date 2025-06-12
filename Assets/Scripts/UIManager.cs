@@ -17,9 +17,6 @@ public class UIManager : MonoBehaviour
     public Slider noiseTypeSlider;
     public Slider xAngleSlider;
     public Slider yAngleSlider;
-
-    
-    private bool dragging;
     public Light sceneLight;
     public MeshGenerator meshGen;
     public AnimationCurve NeutralCurve;
@@ -28,10 +25,12 @@ public class UIManager : MonoBehaviour
     public AnimationCurve MesaCurve;
     public AnimationCurve BasinCurve;
     public AnimationCurve CanyonCurve;
+    
     [Range(0,90.0f)]
     public float xAngle = 30.0f;
     [Range(0, 360.0f)]
     public float yAngle = 245.0f;
+    private bool dragging;
 
     private void Awake()
     {
@@ -41,6 +40,8 @@ public class UIManager : MonoBehaviour
 
     public void Start()
     {
+        // Make tabs swap colors depending on which one is selected
+        // It takes more code to do this than I would like
         ColorBlock block = buttons[1].colors;
         block.colorMultiplier = .8f;
         buttons[1].colors = block;
@@ -124,11 +125,9 @@ public class UIManager : MonoBehaviour
             dragging = false;
         }
 
-        if (dragging)
-        {
-            float movement = Input.mousePositionDelta.x;
-            meshGen.angle -= movement * .25f;
-        }
+        if (!dragging) return;
+        float movement = Input.mousePositionDelta.x;
+        meshGen.angle -= movement * .25f;
     }
 
     // Method of handling UI inspired by Sebastian Lague

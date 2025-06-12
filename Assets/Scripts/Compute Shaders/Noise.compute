@@ -1,7 +1,5 @@
-// Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel CSMain
 #pragma multi_compile _PERLIN _SIMPLEX _WORLEY
-
 
 // What noise function will be used depends on what is defined in C#
 #if defined(_PERLIN)
@@ -25,7 +23,7 @@ struct OctaveParams
 };
 
 // Buffers
-RWStructuredBuffer<float> _HeightMapBuffer; // Everything is set to 0 before this runs
+RWStructuredBuffer<float> _HeightMapBuffer; 
 StructuredBuffer<OctaveParams> _OctaveBuffer;
 
 // Global Variables
@@ -44,22 +42,17 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     if (id.x >= mapWidth || id.y >= mapWidth) return;
 
     // What vertex this point represents; Starts from center instead of corner
-    //float x = (float)(id.x % mapWidth) - midPoint.x;
-    //float y = (float)(id.x / mapWidth) - midPoint.y;
     float2 pos = (id.xy - midPoint) / scaleFactor; // How zoomed in
     uint index = id.y * mapWidth + id.x;
     float height = 0;
-    
-
-    // warp offset is calculated, the main goal of this is to slightly offset where we're sampling from
-    // this helps to avoid artifacts in the terrain when the scale is too large. This is especially true for perlin noise.
 
     // DisplacementScale makes it so that strength doesn't directly affect the final vertical offset
     // regardless of where the warpFrequency (it was just a vertical offset value when freq was 0)
     float displacementScale = warpStrength * warpFrequency;
     float2 warpNoisePos = pos * warpFrequency;
 
-    // Offset noise samples for x/y to avoid diagonal patterns
+    // warp offset is calculated, the main goal of this is to slightly offset where we're sampling from
+    // this helps to avoid artifacts in the terrain when the scale is too large. This is especially true for perlin noise.
     float2 warp = displacementScale * float2(
         SAMPLE_NOISE(warpNoisePos), // dx
         SAMPLE_NOISE(warpNoisePos + float2(100, 100)) // dy (offset seed)

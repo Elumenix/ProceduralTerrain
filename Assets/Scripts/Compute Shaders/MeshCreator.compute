@@ -47,7 +47,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 
     // Get the direction of each triangle. Edge triangles will cancel out because of clamped vertices, saving us from branching
     float3 cross1 = cross(top - currentVertex, left - currentVertex);          // Triangle 1: Current -> Left -> Top
-    float3 cross2 = cross(topRight - currentVertex, top - currentVertex);   // Triangle 2: Current -> Top -> TopRight
+    float3 cross2 = cross(topRight - currentVertex, top - currentVertex);      // Triangle 2: Current -> Top -> TopRight
     float3 cross3 = cross(right - currentVertex, topRight - currentVertex);    // Triangle 3: Current -> TopRight -> Right
     float3 cross4 = cross(bottom - currentVertex, right - currentVertex);      // Triangle 4: Current -> Right -> Bottom
     float3 cross5 = cross(left - currentVertex, bottomLeft - currentVertex);   // Triangle 1: Current -> BottomLeft -> Left

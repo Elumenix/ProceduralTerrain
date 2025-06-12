@@ -1,13 +1,45 @@
 using System.Collections.Generic;
 using Unity.Mathematics;
 using UnityEngine;
-using UnityEngine.Rendering;
 using UnityEngine.UI;
 
 public class MeshGenerator : MonoBehaviour
 {
-    // Variables Changeable within the editor
+    // Most variables are changeable within the inspector. They aren't constrained to these values when changed through code
+    // TRACKING VARIABLES
     public Noise noise;
+    private Unity.Mathematics.Random random;
+    [HideInInspector]
+    public bool isMeshDirty;
+    [HideInInspector]
+    public bool isErosionDirty;
+    private int dim;
+    private bool isGenerating;
+    private int mapLength;   
+    
+    // MATERIAL DATA
+    public Material meshCreator;
+    public Material noiseMaterial;
+    public Material waterMaterial;
+    [HideInInspector]
+    public float angle;
+    public bool showNoiseMap;
+    private static readonly Bounds meshBounds = new Bounds(new Vector3(50, 0, 50), Vector3.one * 100);
+    private static readonly Vector3 rotOffset = new Vector3(50, 0, 50);
+
+    // COMPUTE SHADER DATA
+    public ComputeShader meshGenShader;
+    public ComputeShader erosionShader;
+    public ComputeShader copyComputeBuffer;
+    private ComputeBuffer heightMap;
+    private ComputeBuffer vertexDataBuffer;
+    private ComputeBuffer indexBuffer;
+    private ComputeBuffer minMaxBuffer;
+    private ComputeBuffer savedHeightMap;
+    private ComputeBuffer brushStencil;
+    private List<int2> brush;
+
+    // MESH INFO
     public int resolution;
     public float heightMultiplier;
     public float noiseScale;
@@ -23,44 +55,11 @@ public class MeshGenerator : MonoBehaviour
     public float warpFrequency;
     [Range(0,5)]
     public int smoothingPasses;
-
     public int seed;
     public float2 offset;
     public NoiseType noiseType;
-    private Unity.Mathematics.Random _random;
-    [HideInInspector]
-    public bool isMeshDirty;
-    [HideInInspector]
-    public bool isErosionDirty;
-    [HideInInspector]
-    public float angle;
-    private static readonly Vector3 rotOffset = new Vector3(50, 0, 50);
-    public bool showNoiseMap;
 
-    // Variables made to help with the async nature of the code
-    private int dim;
-    private bool isGenerating;
-    private int mapLength;   
-    
-    // Object reference variables
-    public Material meshCreator;
-    public Material noiseMaterial;
-    public Material waterMaterial;
-
-    // Compute Shader Data
-    public ComputeShader meshGenShader;
-    public ComputeShader erosionShader;
-    public ComputeShader copyComputeBuffer;
-    private ComputeBuffer heightMap;
-    private ComputeBuffer vertexDataBuffer;
-    private ComputeBuffer indexBuffer;
-    private ComputeBuffer minMaxBuffer;
-    private ComputeBuffer savedHeightMap;
-    private ComputeBuffer brushStencil;
-    private readonly Bounds meshBounds = new Bounds(new Vector3(50, 0, 50), Vector3.one * 100);
-    private List<int2> brush;
-    
-    // Erosion Variables
+    // EROSION DATA
     public bool skipErosion;
     public int numRainDrops;
     [Range(0, .999f)]
@@ -82,7 +81,14 @@ public class MeshGenerator : MonoBehaviour
     [Range(0, 48)] 
     public int steps = 32;
     
+    /// UI DATA
+    public List<Slider> sliders;
+    public Toggle erosionToggle;
+    public Toggle noiseMapToggle;
+    public Toggle waterToggle;
+    
     #region StringSearchOptimization
+    
     // String search optimization for material shader properties
     private static readonly int MinMaxBuffer = Shader.PropertyToID("_MinMaxBuffer");
     private static readonly int MaxGrassHeight = Shader.PropertyToID("_MaxGrassHeight");
@@ -123,13 +129,6 @@ public class MeshGenerator : MonoBehaviour
 
     #endregion
 
-    // Using this for inline methods
-    public List<Slider> sliders;
-    public Toggle erosionToggle;
-    public Toggle noiseMapToggle;
-    public Toggle waterToggle;
-
-
     void Start()
     {
         // Make sure the camera is drawing to the depth texture
@@ -138,18 +137,7 @@ public class MeshGenerator : MonoBehaviour
         // Precomputing the area around a drop
         brush = new List<int2>();
         RecalculateBrushStencil(radius);
-        
-        // Default meshShader options (Needed because these change the actual material file)
-        meshCreator.SetFloat(MaxGrassHeight, 1.0f);
-        meshCreator.SetFloat(Threshold, .15f);
-        meshCreator.SetFloat(BlendFactor, .75f);
-        waterMaterial.SetFloat(WaterHeight, .25f);
-        meshCreator.SetFloat(WaterHeight, .25f);
-        waterMaterial.SetFloat(Depth, .6f);
-        meshCreator.SetFloat(WaterEnabled, 1);
-        waterMaterial.SetFloat(Hide, 0.0f);
-        waterMaterial.SetFloat(Rotation, angle);
-        
+        SetUpMaterials();
         
         // Hook up sliders to variables, I'm using inline functions because these are really simple and repetitive
         erosionToggle.onValueChanged.AddListener(val => { skipErosion = !val; isErosionDirty = true; });
@@ -187,12 +175,15 @@ public class MeshGenerator : MonoBehaviour
     
     private void OnApplicationQuit()
     {
-        // Clear all persistent buffers
+        // Clear all persistent buffers to prevent memory leaks
         heightMap?.Release();
         savedHeightMap?.Release();
         brushStencil?.Release();
         vertexDataBuffer?.Release();
         indexBuffer?.Release();
+        
+        // This is a bit more helpful in the editor because I am altering the materials themselves
+        SetUpMaterials();
     }
     
     private void Update()
@@ -203,10 +194,8 @@ public class MeshGenerator : MonoBehaviour
             GenerateMap();
         }
 
-        // Set Rotation
-        Matrix4x4 rotationMatrix = Matrix4x4.Translate(rotOffset) * Matrix4x4.Rotate(Quaternion.Euler(0, angle, 0)) *
-                                   Matrix4x4.Translate(-rotOffset);
-        
+        // Set up materials for this frame
+        Matrix4x4 rotationMatrix = Matrix4x4.Translate(rotOffset) * Matrix4x4.Rotate(Quaternion.Euler(0, angle, 0)) * Matrix4x4.Translate(-rotOffset);
         Material currentMaterial = showNoiseMap ? noiseMaterial : meshCreator;
         currentMaterial.SetMatrix(Rotation, rotationMatrix);
         waterMaterial.SetFloat(Rotation, angle);
@@ -221,20 +210,18 @@ public class MeshGenerator : MonoBehaviour
         isGenerating = true;
         isErosionDirty = false;
         
-        
-        // These will be used for all calls now on so that the player moving the slider won't affect late shader calls
+        // These will be used for all calls from now on so that the player moving the slider won't affect late shader calls
+        // This is pretty important for an asynchronous program
         dim = resolution;
         mapLength = (resolution + 1) * (resolution + 1);
+        random = new Unity.Mathematics.Random((uint)seed);
         
-        // Set Shared variable
+        // Set Shared variables
         meshGenShader.SetInt(NumVertices, mapLength);
         erosionShader.SetInt(NumVertices, mapLength);
         copyComputeBuffer.SetInt(NumVertices, mapLength);
         meshGenShader.SetInt(Resolution, dim + 1);
         erosionShader.SetInt(Resolution, dim);
-        
-        // Creating new random reference so that I can batch random values. For both noise and erosion
-        _random = new Unity.Mathematics.Random((uint)seed);
         
         // Step 1: Get a Height Map
         GetHeightMap();
@@ -244,7 +231,7 @@ public class MeshGenerator : MonoBehaviour
         // Raindrops will be simulated on the terrain. This directly modifies the heightMap
         ComputeErosion();
         
-        // Step 3: Get Min and Max Vertex now that nothing else will change the heightmap
+        // Step 3: Get Min and Max height now that nothing else will change the heightmap
         minMaxBuffer = Noise.PerformReductions(heightMap, mapLength);
         
         // Step 4: Generate Indices
@@ -252,10 +239,10 @@ public class MeshGenerator : MonoBehaviour
         GenerateIndices();
         
         // Step 5: Generate Mesh Data
-        // Creates a new buffer to hold mesh data that we'll use in the drawing shader. Only Reads the heightMap
+        // Sets up the buffer holding mesh data that we'll use in the drawing shader. Only Reads the heightMap
         CreateMeshGPU();
         
-        // Step 6: Set Material Buffers
+        // Step 6: Set Material Buffers, which will be used in the procedural draw from now on
         meshCreator.SetBuffer(VertexDataBuffer, vertexDataBuffer);
         meshCreator.SetBuffer(IndexBuffer, indexBuffer);
         meshCreator.SetBuffer(MinMaxBuffer, minMaxBuffer);
@@ -264,12 +251,13 @@ public class MeshGenerator : MonoBehaviour
         noiseMaterial.SetBuffer(MinMaxBuffer, minMaxBuffer);
         waterMaterial.SetBuffer(MinMaxBuffer, minMaxBuffer);
         
-        // Confirm that a new map can be generated next frame if dirty
+        // Confirm that a new map can be generated next frame if something has changed
         isGenerating = false;
     }
 
     private void GetHeightMap()
     {
+        // If the mesh was changed, we need to redo both noise generation and erosion, otherwise only erosion
         if (isMeshDirty)
         {
             // Unless the resolution of the map changes, buffers can remain persistent
@@ -277,23 +265,23 @@ public class MeshGenerator : MonoBehaviour
             {
                 heightMap?.Release();
                 heightMap = new ComputeBuffer(mapLength, sizeof(int));
-                #if UNITY_EDITOR // Handled automatically be WebGPU
+                #if UNITY_EDITOR // Handled automatically by WebGPU
                 heightMap.SetData(new float[mapLength]);
                 #endif
                 
-                // savedHeightMap will copy HeightMap so that we can save time using it later if only erosion parameters change
+                // Saved heightmap will be resized too to allow for copying
                 savedHeightMap?.Release();
                 savedHeightMap = new ComputeBuffer(mapLength, sizeof(float));
-                #if UNITY_EDITOR // Handled automatically be WebGPU
+                #if UNITY_EDITOR // Handled automatically by WebGPU
                 savedHeightMap.SetData(new float[mapLength]);
                 #endif
             }
             
             // Parameters were changed so a new heightmap will be calculated
-            noise.ComputeHeightMap(ref heightMap, dim + 1, _random, noiseScale, octaves, persistence, lacunarity, offset,
+            noise.ComputeHeightMap(ref heightMap, dim + 1, random, noiseScale, octaves, persistence, lacunarity, offset,
                 (int) noiseType + 1, warpStrength, warpFrequency, smoothingPasses, heightMultiplier);
             
-            // The saved heightmap will copy data from the heightmap
+            // savedHeightMap will copy HeightMap so that we can save time using it later if only erosion parameters change
             CopyComputeBuffer(heightMap, savedHeightMap);
         }
         else
@@ -302,24 +290,17 @@ public class MeshGenerator : MonoBehaviour
             CopyComputeBuffer(savedHeightMap, heightMap);
         }
     }
-
-    private void CopyComputeBuffer(ComputeBuffer src, ComputeBuffer dst)
-    {
-        copyComputeBuffer.SetBuffer(0, SourceBuffer, src);
-        copyComputeBuffer.SetBuffer(0, DestinationBuffer, dst);
-        copyComputeBuffer.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
-    }
     
     private void CreateMeshGPU()
     {
-        // Pass distance between vertices to shader
+        // Pass distance between vertices to shader. I want the map to be scaled by 100 in the scene
         meshGenShader.SetFloat(Scale, 100.0f / dim);
         
-        // This will hold vertices, uvs, and the modified heightmap. Only needs to resize if resolution changes
+        // This will hold vertices, uvs, and tangents. Only needs to resize if resolution changes
         if (vertexDataBuffer == null || vertexDataBuffer.count != mapLength)
         {
             vertexDataBuffer = new ComputeBuffer(mapLength, sizeof(float) * 9); // 3 float3's
-            #if UNITY_EDITOR // Handled automatically be WebGPU
+            #if UNITY_EDITOR // Handled automatically by WebGPU
             vertexDataBuffer.SetData(new VertexData[mapLength]);
             #endif
         }
@@ -336,18 +317,18 @@ public class MeshGenerator : MonoBehaviour
     {
         // Setup
         int numQuads = dim * dim;
-        int numIndices = numQuads * 6;
+        int numIndices = numQuads * 6;  // It just always calculates to this. A square is 2 triangles, which is 6 indices
         
         // Only need to resize buffer if resolution changes
         if (indexBuffer == null || indexBuffer.count != numIndices)
         {
             indexBuffer = new ComputeBuffer(numIndices, sizeof(uint));
-            #if UNITY_EDITOR // Handled automatically be WebGPU
+            #if UNITY_EDITOR // Handled automatically by WebGPU
             indexBuffer.SetData(new int[numIndices]);
             #endif
         }
         
-        // Set Shader data
+        // Set shader data, we're using the second kernel of the MeshCreator compute shader
         meshGenShader.SetBuffer(1, IndexBuffer, indexBuffer);
         meshGenShader.SetInt(QuadWidth, dim);
         meshGenShader.SetInt(NumQuads, numQuads);
@@ -358,7 +339,7 @@ public class MeshGenerator : MonoBehaviour
 
     private void ComputeErosion()
     {
-        // Buffer will throw error if size 0 
+        // Buffer will throw error if size is 0, and no erosion would happen anyway in this case, so we're skipping this
         if (numRainDrops == 0 || steps == 0 || skipErosion)
         {
             return;
@@ -376,17 +357,36 @@ public class MeshGenerator : MonoBehaviour
         erosionShader.SetFloat(MinSlope, minSlope);
         erosionShader.SetInt(NumRainDrops, numRainDrops);
         erosionShader.SetInt(Radius, radius); 
-        //erosionShader.SetInt(BrushLength, brushStencil.count);
-        erosionShader.SetInt(Seed, _random.NextInt());
+        erosionShader.SetInt(Seed, random.NextInt());
         erosionShader.SetInt(ErosionSteps, steps);
         
         // Execute erosion shader
         erosionShader.Dispatch(0, Mathf.CeilToInt(numRainDrops / 64.0f), 1, 1);
     }
+    
+    private void SetUpMaterials()
+    {
+        meshCreator.SetFloat(MaxGrassHeight, 1.0f);
+        meshCreator.SetFloat(Threshold, .15f);
+        meshCreator.SetFloat(BlendFactor, .75f);
+        waterMaterial.SetFloat(WaterHeight, .25f);
+        meshCreator.SetFloat(WaterHeight, .25f);
+        waterMaterial.SetFloat(Depth, .6f);
+        meshCreator.SetFloat(WaterEnabled, 1);
+        waterMaterial.SetFloat(Hide, 0.0f);
+        waterMaterial.SetFloat(Rotation, angle);
+    }
+    
+    private void CopyComputeBuffer(ComputeBuffer src, ComputeBuffer dst)
+    {
+        copyComputeBuffer.SetBuffer(0, SourceBuffer, src);
+        copyComputeBuffer.SetBuffer(0, DestinationBuffer, dst);
+        copyComputeBuffer.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
+    }
 
     private void RecalculateBrushStencil(int rad)
     {
-        // Recalculating brush stencil
+        // Recalculating brush stencil so that it can easily be looped through in the compute shader
         brush.Clear();
         radius = rad;
         for (int x = -radius; x <= radius; x++)
