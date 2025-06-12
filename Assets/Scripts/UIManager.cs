@@ -306,8 +306,8 @@ public class UIManager : MonoBehaviour
         meshGen.sliders[9].value = 2;
         meshGen.skipErosion = false;
         meshGen.erosionToggle.isOn = true;
-        meshGen.numRainDrops = 200000;
-        meshGen.sliders[10].value = 200000;
+        meshGen.numRainDrops = 300000;
+        meshGen.sliders[10].value = 300000;
         meshGen.steps = 24;
         meshGen.sliders[24].value = 24;
         meshGen.radius = 3;

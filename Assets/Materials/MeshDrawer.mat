@@ -136,12 +136,16 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
+    - _AOMultiplier: 1.5
     - _BUILTIN_QueueControl: 0
     - _BUILTIN_QueueOffset: 0
     - _BlendAmount: 0.5
     - _BlendFactor: 0.75
     - _BumpScale: 1
+    - _CurvatureBias: 0.5
+    - _CurvatureScale: 0.99
     - _Cutoff: 0.5
+    - _DetailFadeDistance: 1000
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
     - _FadePower: 0.46
@@ -172,8 +176,8 @@ Material:
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
-    - _GrassColor: {r: 0.54509807, g: 0.51976234, b: 0.21960782, a: 1}
-    - _RimColor: {r: 0.518, g: 0.45163774, b: 0.374514, a: 1}
-    - _RockColor: {r: 0.09803922, g: 0.03921569, b: 0.048367653, a: 1}
+    - _GrassColor: {r: 0.54509795, g: 0.51976216, b: 0.21960777, a: 1}
+    - _RimColor: {r: 0.603, g: 0.4637572, b: 0.30813298, a: 1}
+    - _RockColor: {r: 0.22700001, g: 0.15890001, b: 0.09080001, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

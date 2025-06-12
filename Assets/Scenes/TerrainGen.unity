@@ -1180,6 +1180,16 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   noise: {fileID: 745453629}
+  isMeshDirty: 1
+  isErosionDirty: 0
+  meshCreator: {fileID: 2100000, guid: 6230ec73badf3f04fb216f883cc6fdd3, type: 2}
+  noiseMaterial: {fileID: 2100000, guid: 8888ff51d5aaa4e44b9420fe6d723e8a, type: 2}
+  waterMaterial: {fileID: 2100000, guid: 58631f787c5262a4db48ce9bf0c4a7a2, type: 2}
+  angle: 0
+  showNoiseMap: 0
+  meshGenShader: {fileID: 7200000, guid: 4e2bd1e6d165b4745b976030b7d70f71, type: 3}
+  erosionShader: {fileID: 7200000, guid: 9a2b9e1704516344dac6b9576fec7c54, type: 3}
+  copyComputeBuffer: {fileID: 7200000, guid: 24a56d3b3ff42dc48b15841a14ea88f7, type: 3}
   resolution: 512
   heightMultiplier: 20
   noiseScale: 0.5
@@ -1193,44 +1203,9 @@ MonoBehaviour:
   offset:
     x: 0
     y: 0
-  heightCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 34
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 34
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
   noiseType: 1
-  isMeshDirty: 1
-  isErosionDirty: 0
-  angle: 0
-  showNoiseMap: 0
-  showWater: 1
-  meshCreator: {fileID: 2100000, guid: 6230ec73badf3f04fb216f883cc6fdd3, type: 2}
-  noiseMaterial: {fileID: 2100000, guid: 8888ff51d5aaa4e44b9420fe6d723e8a, type: 2}
-  waterMaterial: {fileID: 2100000, guid: 58631f787c5262a4db48ce9bf0c4a7a2, type: 2}
-  meshGenShader: {fileID: 7200000, guid: 4e2bd1e6d165b4745b976030b7d70f71, type: 3}
-  erosionShader: {fileID: 7200000, guid: 9a2b9e1704516344dac6b9576fec7c54, type: 3}
-  copyComputeBuffer: {fileID: 7200000, guid: 24a56d3b3ff42dc48b15841a14ea88f7, type: 3}
   skipErosion: 0
-  numRainDrops: 200000
+  numRainDrops: 300000
   inertia: 0.05
   sedimentMax: 4
   depositionRate: 0.3
@@ -4612,7 +4587,7 @@ MonoBehaviour:
   m_MinValue: 0
   m_MaxValue: 4000000
   m_WholeNumbers: 1
-  m_Value: 200000
+  m_Value: 300000
   m_OnValueChanged:
     m_PersistentCalls:
       m_Calls:
@@ -18771,7 +18746,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: 'Number of Raindrops: 200k'
+  m_text: 'Number of Raindrops: 300k'
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
