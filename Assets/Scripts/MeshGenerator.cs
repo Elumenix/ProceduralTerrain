@@ -127,6 +127,8 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int BrushBuffer = Shader.PropertyToID("_BrushBuffer");
     private static readonly int ErosionSteps = Shader.PropertyToID("erosionSteps");
     private static readonly int BrushLength = Shader.PropertyToID("brushLength");
+    private static readonly int VerticesPerRow = Shader.PropertyToID("verticesPerRow");
+    private static readonly int WeightedErosionFactor = Shader.PropertyToID("weightedErosionFactor");
 
     #endregion
 
@@ -300,6 +302,7 @@ public class MeshGenerator : MonoBehaviour
         // This will hold vertices, uvs, and tangents. Only needs to resize if resolution changes
         if (vertexDataBuffer == null || vertexDataBuffer.count != mapLength)
         {
+            vertexDataBuffer?.Release();
             vertexDataBuffer = new ComputeBuffer(mapLength, sizeof(float) * 9); // 3 float3's
             #if UNITY_EDITOR // Handled automatically by WebGPU
             vertexDataBuffer.SetData(new VertexData[mapLength]);
@@ -323,6 +326,7 @@ public class MeshGenerator : MonoBehaviour
         // Only need to resize buffer if resolution changes
         if (indexBuffer == null || indexBuffer.count != numIndices)
         {
+            indexBuffer?.Release();
             indexBuffer = new ComputeBuffer(numIndices, sizeof(uint));
             #if UNITY_EDITOR // Handled automatically by WebGPU
             indexBuffer.SetData(new int[numIndices]);
@@ -361,6 +365,8 @@ public class MeshGenerator : MonoBehaviour
         erosionShader.SetInt(Seed, random.NextInt());
         erosionShader.SetInt(ErosionSteps, steps);
         erosionShader.SetInt(BrushLength, brush.Count);
+        erosionShader.SetInt(VerticesPerRow, dim + 1);
+        erosionShader.SetFloat(WeightedErosionFactor, 1.0f / brush.Count);
         
         // Execute erosion shader
         erosionShader.Dispatch(0, Mathf.CeilToInt(numRainDrops / 64.0f), 1, 1);
@@ -376,14 +382,14 @@ public class MeshGenerator : MonoBehaviour
         waterMaterial.SetFloat(Depth, .6f);
         meshCreator.SetFloat(WaterEnabled, 1);
         waterMaterial.SetFloat(Hide, 0.0f);
-        waterMaterial.SetFloat(Rotation, angle);
+        waterMaterial.SetFloat(Rotation, 0.0f);
     }
     
     private void CopyComputeBuffer(ComputeBuffer src, ComputeBuffer dst)
     {
         copyComputeBuffer.SetBuffer(0, SourceBuffer, src);
         copyComputeBuffer.SetBuffer(0, DestinationBuffer, dst);
-        copyComputeBuffer.Dispatch(0, Mathf.CeilToInt(mapLength / 64.0f), 1, 1);
+        copyComputeBuffer.Dispatch(0, Mathf.CeilToInt(mapLength / 32.0f), 1, 1);
     }
 
     private void RecalculateBrushStencil(int rad)
