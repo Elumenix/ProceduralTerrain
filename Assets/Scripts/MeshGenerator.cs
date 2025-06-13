@@ -126,6 +126,7 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int Seed = Shader.PropertyToID("_seed");
     private static readonly int BrushBuffer = Shader.PropertyToID("_BrushBuffer");
     private static readonly int ErosionSteps = Shader.PropertyToID("erosionSteps");
+    private static readonly int BrushLength = Shader.PropertyToID("brushLength");
 
     #endregion
 
@@ -359,6 +360,7 @@ public class MeshGenerator : MonoBehaviour
         erosionShader.SetInt(Radius, radius); 
         erosionShader.SetInt(Seed, random.NextInt());
         erosionShader.SetInt(ErosionSteps, steps);
+        erosionShader.SetInt(BrushLength, brush.Count);
         
         // Execute erosion shader
         erosionShader.Dispatch(0, Mathf.CeilToInt(numRainDrops / 64.0f), 1, 1);
@@ -369,8 +371,8 @@ public class MeshGenerator : MonoBehaviour
         meshCreator.SetFloat(MaxGrassHeight, 1.0f);
         meshCreator.SetFloat(Threshold, .15f);
         meshCreator.SetFloat(BlendFactor, .75f);
-        waterMaterial.SetFloat(WaterHeight, .25f);
-        meshCreator.SetFloat(WaterHeight, .25f);
+        waterMaterial.SetFloat(WaterHeight, .2f);
+        meshCreator.SetFloat(WaterHeight, .2f);
         waterMaterial.SetFloat(Depth, .6f);
         meshCreator.SetFloat(WaterEnabled, 1);
         waterMaterial.SetFloat(Hide, 0.0f);
@@ -393,10 +395,13 @@ public class MeshGenerator : MonoBehaviour
         {
             for (int z = -radius; z <= radius; z++)
             {
-                // If you thought it would be a good idea here to cull whatever elements would never be in the radius,
-                // guess again. The GPU apparently likes guessable numbers, so if you try something that won't
-                // be compile-time constant, the loop won't optimize and everything will be very slow
-                    brush.Add(new int2(x, z));
+                // Only points within the radius of the brush will be added
+                float d = Mathf.Sqrt(x * x + z * z);
+                if (d > radius) continue;
+                
+                // brush stencil and weights are being precalculated on the cpu so that the gpu
+                // doesn't have to do additional calculations through loop
+                brush.Add(new int2(x, z));
             }
         }
             

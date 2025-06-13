@@ -1,10 +1,7 @@
-using System;
 using System.Collections.Generic;
 using TMPro;
 using Unity.Mathematics;
-using Unity.VisualScripting;
 using UnityEngine;
-using UnityEngine.AI;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
@@ -281,8 +278,8 @@ public class UIManager : MonoBehaviour
     {
         meshGen.resolution = 512;
         meshGen.sliders[0].value = 512;
-        meshGen.heightMultiplier = 20.0f;
-        meshGen.sliders[3].value = 20.0f;
+        meshGen.heightMultiplier = 25.0f;
+        meshGen.sliders[3].value = 25.0f;
         meshGen.noiseType = NoiseType.Simplex;
         meshGen.sliders[1].value = 1;
         meshGen.noiseScale = 0.5f;
@@ -333,7 +330,7 @@ public class UIManager : MonoBehaviour
         meshGen.sliders[19].value = 1.0f;
         meshGen.sliders[20].value = .25f;
         meshGen.sliders[21].value = .75f;
-        meshGen.sliders[22].value = .25f;
+        meshGen.sliders[22].value = .2f;
         meshGen.sliders[23].value = .4f;
         xAngleSlider.value = 30.0f;
         yAngleSlider.value = 245.0f;

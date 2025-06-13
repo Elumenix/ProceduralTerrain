@@ -136,7 +136,7 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _AOMultiplier: 1.5
+    - _AOMultiplier: 3.31
     - _BUILTIN_QueueControl: 0
     - _BUILTIN_QueueOffset: 0
     - _BlendAmount: 0.5
@@ -171,7 +171,7 @@ Material:
     - _Threshold: 0.15
     - _UVSec: 0
     - _WaterEnabled: 1
-    - _WaterHeight: 0.25
+    - _WaterHeight: 0.2
     - _ZWrite: 1
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}

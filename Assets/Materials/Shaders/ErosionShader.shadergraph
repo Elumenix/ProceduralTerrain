@@ -436,20 +436,6 @@
         {
             "m_OutputSlot": {
                 "m_Node": {
-                    "m_Id": "3a6648a7ed5a4ecba8465c7ab840fc4f"
-                },
-                "m_SlotId": 1
-            },
-            "m_InputSlot": {
-                "m_Node": {
-                    "m_Id": "66f76bd07c2e427d8627071e996b17d8"
-                },
-                "m_SlotId": 0
-            }
-        },
-        {
-            "m_OutputSlot": {
-                "m_Node": {
                     "m_Id": "414a8510aac9470090ef74d7b53b50dd"
                 },
                 "m_SlotId": 0
@@ -1525,8 +1511,8 @@
     "m_ObjectId": "07376de0c08a43df9c02ad3066fbb4fc",
     "m_Title": "Slope",
     "m_Position": {
-        "x": -2848.000244140625,
-        "y": 445.00006103515627
+        "x": -2848.0,
+        "y": 445.0
     }
 }
 
@@ -2941,7 +2927,7 @@
     "m_Hidden": false,
     "m_ShaderOutputName": "Occlusion",
     "m_StageCapability": 2,
-    "m_Value": 1.0,
+    "m_Value": 0.800000011920929,
     "m_DefaultValue": 1.0,
     "m_Labels": []
 }
@@ -3331,8 +3317,8 @@
     "m_ObjectId": "3e21611c2d7d4cb487f36edd553edd11",
     "m_Title": "Grass Height",
     "m_Position": {
-        "x": -2489.000244140625,
-        "y": -839.0000610351563
+        "x": -2489.0,
+        "y": -839.0
     }
 }
 
@@ -3584,7 +3570,7 @@
     "m_Title": "Rim",
     "m_Position": {
         "x": -1278.0,
-        "y": 1408.0001220703125
+        "y": 1408.0
     }
 }
 
@@ -4165,8 +4151,8 @@
     "m_ObjectId": "5dd4421f8434467485d304e4ab1c7678",
     "m_Title": "Grass Blend Height",
     "m_Position": {
-        "x": -2740.000244140625,
-        "y": 904.0000610351563
+        "x": -2740.0,
+        "y": 904.0
     }
 }
 
@@ -7333,8 +7319,8 @@
     "m_ObjectId": "c662568d2cc843ef9ad63ce5b501003c",
     "m_Title": "Grass Weight",
     "m_Position": {
-        "x": -1767.000244140625,
-        "y": 378.9999694824219
+        "x": -1767.0,
+        "y": 379.0
     }
 }
 
@@ -8785,8 +8771,8 @@
     "m_ObjectId": "f4fc4762676c4a2296e47b56304588e7",
     "m_Title": "Rim Weight",
     "m_Position": {
-        "x": 330.9998779296875,
-        "y": 951.0000610351563
+        "x": 331.0,
+        "y": 951.0
     }
 }
 

@@ -4,9 +4,6 @@ RWStructuredBuffer<float> _ReadBuffer;
 RWStructuredBuffer<float> _WriteBuffer;
 uint resolution;
 
-// helper
-static int2 bounds = int2(resolution - 1, resolution - 1);
-
 [numthreads(16,16,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
@@ -17,6 +14,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     int index = id.y * resolution + id.x;
     float sum = 0;
     int count = 0;
+    int2 bounds = int2(resolution - 1, resolution - 1);
 
     // Calculate the weight of everything in a 5x5 area
     for (int dy = -2; dy <= 2; dy++)

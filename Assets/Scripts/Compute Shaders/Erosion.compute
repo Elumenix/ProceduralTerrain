@@ -26,26 +26,12 @@ float softness;
 float gravity;
 float minSlope;
 int erosionSteps;
-
-// Precomputed constants
-static const uint brushLength = (radius + 1) * (radius + 1);
-static const float resolutionF = float(resolution);
-static const int verticesPerRow = resolution + 1;
-static const float fRadius = (float)radius + .001; // Needs to prevent division by 0
-static const float invRadius = 1.0f / fRadius;
-static const float radiusSquared = fRadius * fRadius;
-static const float invRadSquared = 1.0f / radiusSquared;
-
-// Approximation for the weight of all points within the radius of any arbitrary point
-// This is a huge optimization over looping every nearby point, and eliminates the need for two passes
-// This also assumes there would be more points beyond the edge of the map, which is what I want to imply in this implementation
-static const float invNorm = 3.0f / (PI * fRadius * fRadius * fRadius);
+uint brushLength;
 
 // Group shared memory
 groupshared int2 sharedBrush[MAX_BRUSH_LENGTH];
-groupshared float precomputedWeights[MAX_BRUSH_LENGTH];
 
-void GetHeightAndGradient(float2 uv, int index, out float height, out float2 gradient)
+void GetHeightAndGradient(float2 uv, int index, int verticesPerRow, out float height, out float2 gradient)
 {
     // Get height of all vertices of quad
     const float nw = _HeightBuffer[index];                       // Top Left
@@ -67,7 +53,7 @@ void GetHeightAndGradient(float2 uv, int index, out float height, out float2 gra
 }
 
 // This is essentially GetHeightAndGradient without the gradient part
-float SampleHeight(float2 pos)
+float SampleHeight(float2 pos, int verticesPerRow)
 {
     // These variables won't be reused again this frame, so they're kept in this method
     const int2 colRow = floor(pos);
@@ -92,6 +78,16 @@ float SampleHeight(float2 pos)
 // Simulate a raindrop picking up and depositing sediment
 void SimulateDrop(int x, int y) 
 {
+    // Precomputed constants
+    const int verticesPerRow = resolution + 1;
+    const float fRadius = (float)radius + .001; // Needs to prevent division by 0
+    const float radiusSquared = fRadius * fRadius;
+
+    // Approximation for the weight of all points within the radius of any arbitrary point
+    // This is a huge optimization over looping every nearby point, and eliminates the need for two passes
+    // This also assumes there would be more points beyond the edge of the map, which is what I want to imply in this implementation
+    const float invNorm = 3.0f / (PI * fRadius * fRadius * fRadius);
+    
     // Local drop variables
     // Position is on a grid between mapWidth + 1 and mapHeight + 1
     // Raindrop will always start directly in the middle of a face, and at least 0.5 away from the edge of the world
@@ -119,7 +115,7 @@ void SimulateDrop(int x, int y)
 
         float oldHeight;
         float2 gradient;
-        GetHeightAndGradient(uv, index, oldHeight, gradient);
+        GetHeightAndGradient(uv, index, verticesPerRow, oldHeight, gradient);
 
         // Update flow direction based on gradient
         // Inertia determines how much gradient (terrain directed angle) is taken into account
@@ -134,7 +130,7 @@ void SimulateDrop(int x, int y)
         bool inBounds = all(colRow2 >= 0) && all(colRow2 < resolution); 
 
         // If we needed to sample out of bounds, assume the same height to give the illusion of infinite terrain
-        float newHeight = inBounds ? SampleHeight(newPos) : oldHeight;
+        float newHeight = inBounds ? SampleHeight(newPos, verticesPerRow) : oldHeight;
         float heightDif = newHeight - oldHeight;
 
         // Speed and size of the drop determine how much sediment it can hold
@@ -186,10 +182,9 @@ void SimulateDrop(int x, int y)
                 // Purposefully branching here tends to be faster than the computations and global scattered write below
                 if (!(pointInBounds && dSquared <= radiusSquared)) continue;
 
-                // Position from offset is multiplied by the relative position of the drop to the quad it's in
-                // This weights radius by the drops relative position to each vertex, rather than just the quad
-                const float relativePos = 1.0 - dSquared * invRadSquared; 
-                const float weight = precomputedWeights[vert] * relativePos;
+                // The overall weight of this drop decreases the further the drop is from the point
+                // This helps give more erosion close to the drop, which can result in formations like ridges and rivers
+                const float weight = radius - sqrt(distance.x * distance.x + distance.y * distance.y);
                 const int idx = (offset.y * verticesPerRow + offset.x);
 
                 // Erode the terrain by the proper amount. 
@@ -223,11 +218,6 @@ void CSMain (uint3 id : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
     for (uint i = groupIndex; i < brushLength; i += 64) {
         int2 b = _BrushBuffer[i];
         sharedBrush[i] = b;
-
-        // Precomputing distance of the current quad to the offset quad by radius, as a base weight
-        // This is used as the base of weighting every erosion iteration, so it saves a lot of time
-        float distanceSqr = dot(b,b);
-        precomputedWeights[i] = fRadius - sqrt(distanceSqr); // radius - distance but without sqrt()  
     }
     GroupMemoryBarrierWithGroupSync(); // sync all threads in group after writing to group shared memory
     if (id.x >= numRainDrops) return; // Don't need to iterate on
