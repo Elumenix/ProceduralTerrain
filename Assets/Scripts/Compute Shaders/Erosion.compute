@@ -33,46 +33,52 @@ groupshared int2 sharedBrush[MAX_BRUSH_LENGTH];
 
 void GetHeightAndGradient(float2 uv, int index, int verticesPerRow, out float height, out float2 gradient)
 {
-    // Get height of all vertices of quad
-    const float nw = _HeightBuffer[index];                       // Top Left
-    const float ne = _HeightBuffer[index + 1];                   // Top Right
-    const float sw = _HeightBuffer[index + verticesPerRow];      // Bottom Left
-    const float se = _HeightBuffer[index + verticesPerRow + 1];  // Bottom Right
-
-    // This is apparently good for the ALU
-    const float diffX1 = ne - nw;
-    const float diffX2 = se - sw;
-    const float diffY1 = sw - nw;
-    const float diffY2 = se - ne;
-    const float cross = diffY2 - diffY1;
+    // Get 4 surrounding heights. Some GPUs optimize doing this vectorized
+    const float4 heights = float4(
+        _HeightBuffer[index],                       // Top Left
+        _HeightBuffer[index + 1],                   // Top Right
+        _HeightBuffer[index + verticesPerRow],      // Bottom Left
+        _HeightBuffer[index + verticesPerRow + 1]   // Bottom Right
+    );
+    
+    // Vectorized gradient calculation
+    const float2 diffX = heights.yw - heights.xz; // [ne-nw, se-sw]
+    const float2 diffY = heights.zw - heights.xy; // [sw-nw, se-ne]
+    const float cross = diffY.y - diffY.x;        // (se-ne) - (sw-nw)
 
     // Bilinear Interpolation of heights to get gradient direction and height
-    gradient = float2(lerp(diffX1, diffX2, uv.y), lerp(diffY1, diffY2, uv.x));
-
-    height = nw + uv.x * diffX1 + uv.y * diffY1 + (uv.x * uv.y) * cross;
+    gradient = float2(lerp(diffX.x, diffX.y, uv.y), lerp(diffY.x, diffY.y, uv.x));
+    height = heights.x + uv.x * diffX.x + uv.y * diffY.x + (uv.x * uv.y) * cross;
 }
 
 // This is essentially GetHeightAndGradient without the gradient part
-float SampleHeight(float2 pos, int verticesPerRow)
+float SampleHeight(float2 pos, int verticesPerRow, float currentHeight)
 {
     // These variables won't be reused again this frame, so they're kept in this method
     const int2 colRow = floor(pos);
     const float2 uv = pos - floor(pos);
+
+    // We'll return currentHeight as height for out of bounds vertices, this will mean height difference will mark out of bounds
+    // terrain as being the same as the current height(flat), giving the illusion of infinite terrain
+    if (any(colRow < 0) || any(colRow >= resolution)) return currentHeight;
+    
     const int index = colRow.y * verticesPerRow + colRow.x;
 
-    // Get height of all vertices of quad
-    const float nw = _HeightBuffer[index];
-    const float ne = _HeightBuffer[index + 1];
-    const float sw = _HeightBuffer[index + verticesPerRow];
-    const float se = _HeightBuffer[index + verticesPerRow + 1];
+    // Getting all height values
+    const float4 heights = float4(
+        _HeightBuffer[index],                     // nw
+        _HeightBuffer[index + 1],                 // ne  
+        _HeightBuffer[index + verticesPerRow],    // sw
+        _HeightBuffer[index + verticesPerRow + 1] // se
+    );
+    
+    // Optimized bilinear interpolation
+    const float2 diffX = heights.yw - heights.xz; // [ne-nw, se-sw]
+    const float diffY = heights.z - heights.x;    // sw-nw
+    const float cross = diffX.y - diffX.x;        // (se-sw) - (ne-nw)  // Same result but slightly less cache friendly
 
-    // This is apparently good for the ALU
-    const float diffX = ne - nw;
-    const float diffY = sw - nw;
-    const float cross = (se - ne) - diffY;
-
-    // This is the height calculation
-    return nw + uv.x * diffX + uv.y * diffY + (uv.x * uv.y) * cross;
+    // Height Calculation
+    return heights.x + uv.x * diffX.x + uv.y * diffY + (uv.x * uv.y) * cross;
 }
 
 // Simulate a raindrop picking up and depositing sediment
@@ -82,11 +88,6 @@ void SimulateDrop(int x, int y)
     const int verticesPerRow = resolution + 1;
     const float fRadius = (float)radius + .001; // Needs to prevent division by 0
     const float radiusSquared = fRadius * fRadius;
-
-    // Approximation for the weight of all points within the radius of any arbitrary point
-    // This is a huge optimization over looping every nearby point, and eliminates the need for two passes
-    // This also assumes there would be more points beyond the edge of the map, which is what I want to imply in this implementation
-    const float invNorm = 3.0f / (PI * fRadius * fRadius * fRadius);
     
     // Local drop variables
     // Position is on a grid between mapWidth + 1 and mapHeight + 1
@@ -126,11 +127,7 @@ void SimulateDrop(int x, int y)
         
         // Data for the next position is found
         const float2 newPos = position + dir;
-        const int2 colRow2 = floor(newPos);
-        bool inBounds = all(colRow2 >= 0) && all(colRow2 < resolution); 
-
-        // If we needed to sample out of bounds, assume the same height to give the illusion of infinite terrain
-        float newHeight = inBounds ? SampleHeight(newPos, verticesPerRow) : oldHeight;
+        float newHeight = SampleHeight(newPos, verticesPerRow, oldHeight);
         float heightDif = newHeight - oldHeight;
 
         // Speed and size of the drop determine how much sediment it can hold
@@ -168,7 +165,7 @@ void SimulateDrop(int x, int y)
             // Amount of sediment to take won't be greater than the height difference
             float erosionAmount = min((dropCapacity - sediment) * softness, -heightDif);
             sediment += erosionAmount;
-            const float weightedErosionAmount = erosionAmount * invNorm; // Skipping a calculation that would be in the loop
+            const float weightedErosionAmount = erosionAmount  / brushLength; // Skipping a calculation that would be in the loop
             
             [loop]
             for (uint vert = 0; vert < brushLength; vert++)
