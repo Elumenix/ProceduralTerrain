@@ -9,7 +9,7 @@
 // 2. The terrain is infinite, rather than being an island or suddenly stopping at the edge of the map
 
 // Buffers
-RWStructuredBuffer<half> _HeightBuffer; // working with half's is easier and more efficient than half3's
+RWStructuredBuffer<float> _HeightBuffer; // working with float's is easier and more efficient than float3's
 StructuredBuffer<int2> _BrushBuffer;
 
 // Variables
@@ -17,27 +17,27 @@ uint numRainDrops;
 uint radius;
 uint _seed;
 int resolution; // width & height (Number of faces, not vertices
-half inertia;
-half maxSediment;
-half depositionRate;
-half evaporationRate;
-half softness;
-half gravity;
-half minSlope;
+float inertia;
+float maxSediment;
+float depositionRate;
+float evaporationRate;
+float softness;
+float gravity;
+float minSlope;
 int erosionSteps;
 uint brushLength;
 
 // Precomputed constants
 int verticesPerRow;
-half weightedErosionFactor;
+float weightedErosionFactor;
 
 // Group shared memory
 groupshared int2 sharedBrush[MAX_BRUSH_LENGTH];
 
-void GetHeightAndGradient(half2 uv, int index, out half height, out half2 gradient)
+void GetHeightAndGradient(half2 uv, int index, out float height, out float2 gradient)
 {
     // Get 4 surrounding heights. Some GPUs optimize doing this vectorized
-    const half4 heights = half4(
+     float4 heights = float4(
         _HeightBuffer[index],                       // Top Left
         _HeightBuffer[index + 1],                   // Top Right
         _HeightBuffer[index + verticesPerRow],      // Bottom Left
@@ -45,30 +45,30 @@ void GetHeightAndGradient(half2 uv, int index, out half height, out half2 gradie
     );
     
     // Vectorized gradient calculation
-    const half2 diffX = heights.yw - heights.xz; // [ne-nw, se-sw]
-    const half2 diffY = heights.zw - heights.xy; // [sw-nw, se-ne]
-    const half cross = diffY.y - diffY.x;        // (se-ne) - (sw-nw)
+     float2 diffX = heights.yw - heights.xz; // [ne-nw, se-sw]
+     float2 diffY = heights.zw - heights.xy; // [sw-nw, se-ne]
+     float cross = diffY.y - diffY.x;        // (se-ne) - (sw-nw)
 
     // Bilinear Interpolation of heights to get gradient direction and height
-    gradient = half2(lerp(diffX.x, diffX.y, uv.y), lerp(diffY.x, diffY.y, uv.x));
+    gradient = float2(lerp(diffX.x, diffX.y, uv.y), lerp(diffY.x, diffY.y, uv.x));
     height = heights.x + uv.x * diffX.x + uv.y * diffY.x + (uv.x * uv.y) * cross;
 }
 
 // This is essentially GetHeightAndGradient without the gradient part
-half SampleHeight(half2 pos, half currentHeight)
+float SampleHeight(float2 pos, float currentHeight)
 {
     // These variables won't be reused again this frame, so they're kept in this method
-    const int2 colRow = floor(pos);
-    const half2 uv = pos - floor(pos);
+     int2 colRow = floor(pos);
+     half2 uv = pos - floor(pos);
 
     // We'll return currentHeight as height for out of bounds vertices, this will mean height difference will mark out of bounds
     // terrain as being the same as the current height(flat), giving the illusion of infinite terrain
     if (any(colRow < 0) || any(colRow >= resolution)) return currentHeight;
     
-    const int index = colRow.y * verticesPerRow + colRow.x;
+     int index = colRow.y * verticesPerRow + colRow.x;
 
     // Getting all height values
-    const half4 heights = half4(
+     float4 heights = float4(
         _HeightBuffer[index],                     // nw
         _HeightBuffer[index + 1],                 // ne  
         _HeightBuffer[index + verticesPerRow],    // sw
@@ -76,9 +76,9 @@ half SampleHeight(half2 pos, half currentHeight)
     );
     
     // Optimized bilinear interpolation
-    const half2 diffX = heights.yw - heights.xz; // [ne-nw, se-sw]
-    const half diffY = heights.z - heights.x;    // sw-nw
-    const half cross = diffX.y - diffX.x;        // (se-sw) - (ne-nw)  // Same result but slightly less cache friendly
+     float2 diffX = heights.yw - heights.xz; // [ne-nw, se-sw]
+     float diffY = heights.z - heights.x;    // sw-nw
+     float cross = diffX.y - diffX.x;        // (se-sw) - (ne-nw)  // Same result but slightly less cache friendly
 
     // Height Calculation
     return heights.x + uv.x * diffX.x + uv.y * diffY + (uv.x * uv.y) * cross;
@@ -90,16 +90,16 @@ void SimulateDrop(int x, int y)
     // Local drop variables
     // Position is on a grid between mapWidth + 1 and mapHeight + 1
     // Raindrop will always start directly in the middle of a face, and at least 0.5 away from the edge of the world
-    half2 position = half2(x + 0.5f, y + 0.5f);
+    float2 position = float2(x + 0.5f, y + 0.5f);
     half velocity = 1.0f;
-    half2 dir = 0.0f;
+    float2 dir = 0.0f;
     half volume = 1.0f;
     half sediment = 0.0f;
     
     [loop] // Max Steps to ensure drop doesn't move endlessly
     for (int i = 0; i < erosionSteps; i++)
     {
-        const int2 colRow = floor(position);
+         int2 colRow = floor(position);
 
         // We shouldn't continue if the starting position of the drop for this step is already off the map
         // Drops exactly on the right or bottom border should also be considered off because the gradient would consider them at an out-of-bounds cell
@@ -108,34 +108,34 @@ void SimulateDrop(int x, int y)
         // Start with getting important variables
         // Position clamping to a valid edge implies there is terrain outside the edge of the map that is a same height
         // Get row/column of top left index of (square) face
-        const half2 uv = position - floor(position); // sub-coordinate, top-left is (0,0)
-        const half2 invUV = 1.0f - uv;
-        const int index = colRow.y * verticesPerRow + colRow.x;
+         half2 uv = position - floor(position); // sub-coordinate, top-left is (0,0)
+         float2 invUV = 1.0f - uv;
+         int index = colRow.y * verticesPerRow + colRow.x;
 
-        half oldHeight;
-        half2 gradient;
+        float oldHeight;
+        float2 gradient;
         GetHeightAndGradient(uv, index, oldHeight, gradient);
 
         // Update flow direction based on gradient
         // Inertia determines how much gradient (terrain directed angle) is taken into account
-        const half2 newDir = dir * inertia - gradient * (1.02 - inertia); // I try to avoid 1 - inertia because it could equate to 0
-        const half dirLengthSqr = dot(newDir,newDir);
+         float2 newDir = dir * inertia - gradient * (1.02 - inertia); // I try to avoid 1 - inertia because it could equate to 0
+         float dirLengthSqr = dot(newDir,newDir);
         if (dirLengthSqr < EPSILON) return; // We're done if the drop isn't moving
         dir = normalize(newDir) * .5f; // Normalize: Drop moves fixed distance of .5f, so erosion is evenly distributed
         
         // Data for the next position is found
-        const half2 newPos = position + dir;
-        half newHeight = SampleHeight(newPos, oldHeight);
-        half heightDif = newHeight - oldHeight;
+         float2 newPos = position + dir;
+        float newHeight = SampleHeight(newPos, oldHeight);
+        float heightDif = newHeight - oldHeight;
 
         // Speed and size of the drop determine how much sediment it can hold
-        const half dropCapacity = max(-heightDif, minSlope) * velocity * volume * maxSediment;
+        half dropCapacity = max(-heightDif, minSlope) * velocity * volume * maxSediment;
 
         // If the drop ascends or is over capacity, it will deposit instead of erode
         if (heightDif >= 0.0f || sediment >= dropCapacity)
         {
             // Vectorized weight calculation
-            const half4 weights = half4(
+             float4 weights = float4(
                 invUV.x * invUV.y, // TL
                 uv.x * invUV.y,    // TR  
                 invUV.x * uv.y,    // BL
@@ -143,12 +143,12 @@ void SimulateDrop(int x, int y)
             );
 
             // Both what would happen if the drop is ascending and descending are calculated, so we can do a branchless conditional
-            const half depositAscending = min(sediment, heightDif); // Either completely fill pit at oldPos or deposit all sediment there
-            const half depositSurplus = (sediment - dropCapacity) * depositionRate; // A percentage of the surplus sediment is dropped  
+             float depositAscending = min(sediment, heightDif); // Either completely fill pit at oldPos or deposit all sediment there
+             float depositSurplus = (sediment - dropCapacity) * depositionRate; // A percentage of the surplus sediment is dropped  
 
             // This is essentially a bool, 0 if descending, 1 if ascending. Helps with branchless conditionals
-            const half isAscending = step(0.0, heightDif);
-            const half depositAmount = min(sediment, max(lerp(depositSurplus, depositAscending, isAscending), 0));
+             float isAscending = saturate(sign(heightDif));
+             half depositAmount = min(sediment, max(lerp(depositSurplus, depositAscending, isAscending), 0));
             
             // Remove the lost sediment from the drop
             sediment -= depositAmount;
@@ -165,16 +165,16 @@ void SimulateDrop(int x, int y)
             // Amount of sediment to take won't be greater than the height difference
             half erosionAmount = min((dropCapacity - sediment) * softness, -heightDif);
             sediment += erosionAmount;
-            const half weightedErosionAmount = erosionAmount * weightedErosionFactor; // Skipping a calculation that would be in the loop
-            const half radiusSquared = (half)(radius * radius);
+            half weightedErosionAmount = erosionAmount * weightedErosionFactor; // Skipping a calculation that would be in the loop
+             float radiusSquared = (float)(radius * radius);
             
-            [unroll(4)]
+            [loop]
             for (uint vert = 0; vert < brushLength; vert++)
             {
-                const int2 offset = colRow + sharedBrush[vert];
-                if (any(offset < 0) && any(offset > resolution)) continue;
-                const half2 distance = position - offset;
-                const half dSquared = dot(distance, distance);
+                 int2 offset = colRow + sharedBrush[vert];
+                if (any(offset < 0) || any(offset > resolution)) continue;
+                 float2 distance = position - offset;
+                 float dSquared = dot(distance, distance);
 
                 // If the point isn't in bounds of the map, or it's outside the radius of the drop, we continue
                 // Purposefully branching here tends to be faster than the computations and global scattered write below
@@ -182,8 +182,8 @@ void SimulateDrop(int x, int y)
 
                 // The overall weight of this drop decreases the further the drop is from the point
                 // This helps give more erosion close to the drop, which can result in formations like ridges and rivers
-                const half weight = radius - sqrt(dSquared);
-                const int idx = (offset.y * verticesPerRow + offset.x);
+                half weight = radius - sqrt(dSquared);
+                 int idx = (offset.y * verticesPerRow + offset.x);
 
                 // Erode the terrain by the proper amount. 
                 _HeightBuffer[idx] -= weightedErosionAmount * weight;
@@ -208,12 +208,12 @@ uint PCG(uint input)
     return (word >> 22u) ^ word;
 }
 
-[numthreads(32,1,1)]
+[numthreads(64,1,1)]
 void CSMain (uint3 id : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
 {
     // Preload brush into shared memory, This will be much faster than trying to access the buffer several times later
-    [unroll(4)]
-    for (uint i = groupIndex; i < brushLength; i += 32) {
+    [unroll(2)]
+    for (uint i = groupIndex; i < brushLength; i += 64) {
         int2 b = _BrushBuffer[i];
         sharedBrush[i] = b;
     }
