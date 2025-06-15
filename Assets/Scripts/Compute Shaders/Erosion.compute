@@ -3,6 +3,7 @@
 #define EPSILON 1e-6
 #define PI 3.14159265
 #define MAX_BRUSH_LENGTH 81 // A radius of 5 would be 81.
+#define TILE_SIZE 32
 
 // The following code makes two assumptions
 // 1. This code is Single Execution (Not runtime code, or running every frame)
@@ -30,6 +31,7 @@ uint brushLength;
 // Precomputed constants
 int verticesPerRow;
 float weightedErosionFactor;
+float radiusSquared;
 
 // Group shared memory
 groupshared int2 sharedBrush[MAX_BRUSH_LENGTH];
@@ -37,7 +39,7 @@ groupshared int2 sharedBrush[MAX_BRUSH_LENGTH];
 void GetHeightAndGradient(half2 uv, int index, out float height, out float2 gradient)
 {
     // Get 4 surrounding heights. Some GPUs optimize doing this vectorized
-     float4 heights = float4(
+    float4 heights = float4(
         _HeightBuffer[index],                       // Top Left
         _HeightBuffer[index + 1],                   // Top Right
         _HeightBuffer[index + verticesPerRow],      // Bottom Left
@@ -45,9 +47,9 @@ void GetHeightAndGradient(half2 uv, int index, out float height, out float2 grad
     );
     
     // Vectorized gradient calculation
-     float2 diffX = heights.yw - heights.xz; // [ne-nw, se-sw]
-     float2 diffY = heights.zw - heights.xy; // [sw-nw, se-ne]
-     float cross = diffY.y - diffY.x;        // (se-ne) - (sw-nw)
+    float2 diffX = heights.yw - heights.xz; // [ne-nw, se-sw]
+    float2 diffY = heights.zw - heights.xy; // [sw-nw, se-ne]
+    float cross = diffY.y - diffY.x;        // (se-ne) - (sw-nw)
 
     // Bilinear Interpolation of heights to get gradient direction and height
     gradient = float2(lerp(diffX.x, diffX.y, uv.y), lerp(diffY.x, diffY.y, uv.x));
@@ -58,17 +60,17 @@ void GetHeightAndGradient(half2 uv, int index, out float height, out float2 grad
 float SampleHeight(float2 pos, float currentHeight)
 {
     // These variables won't be reused again this frame, so they're kept in this method
-     int2 colRow = floor(pos);
-     half2 uv = pos - floor(pos);
+    int2 colRow = (int2)pos;
+    half2 uv = pos - (float2)colRow;
 
     // We'll return currentHeight as height for out of bounds vertices, this will mean height difference will mark out of bounds
     // terrain as being the same as the current height(flat), giving the illusion of infinite terrain
     if (any(colRow < 0) || any(colRow >= resolution)) return currentHeight;
     
-     int index = colRow.y * verticesPerRow + colRow.x;
+    int index = colRow.y * verticesPerRow + colRow.x;
 
     // Getting all height values
-     float4 heights = float4(
+    float4 heights = float4(
         _HeightBuffer[index],                     // nw
         _HeightBuffer[index + 1],                 // ne  
         _HeightBuffer[index + verticesPerRow],    // sw
@@ -76,9 +78,9 @@ float SampleHeight(float2 pos, float currentHeight)
     );
     
     // Optimized bilinear interpolation
-     float2 diffX = heights.yw - heights.xz; // [ne-nw, se-sw]
-     float diffY = heights.z - heights.x;    // sw-nw
-     float cross = diffX.y - diffX.x;        // (se-sw) - (ne-nw)  // Same result but slightly less cache friendly
+    float2 diffX = heights.yw - heights.xz; // [ne-nw, se-sw]
+    float diffY = heights.z - heights.x;    // sw-nw
+    float cross = diffX.y - diffX.x;        // (se-sw) - (ne-nw)  // Same result but slightly less cache friendly
 
     // Height Calculation
     return heights.x + uv.x * diffX.x + uv.y * diffY + (uv.x * uv.y) * cross;
@@ -99,7 +101,7 @@ void SimulateDrop(int x, int y)
     [loop] // Max Steps to ensure drop doesn't move endlessly
     for (int i = 0; i < erosionSteps; i++)
     {
-         int2 colRow = floor(position);
+        int2 colRow = (int2)position;
 
         // We shouldn't continue if the starting position of the drop for this step is already off the map
         // Drops exactly on the right or bottom border should also be considered off because the gradient would consider them at an out-of-bounds cell
@@ -108,23 +110,23 @@ void SimulateDrop(int x, int y)
         // Start with getting important variables
         // Position clamping to a valid edge implies there is terrain outside the edge of the map that is a same height
         // Get row/column of top left index of (square) face
-         half2 uv = position - floor(position); // sub-coordinate, top-left is (0,0)
-         float2 invUV = 1.0f - uv;
-         int index = colRow.y * verticesPerRow + colRow.x;
+        half2 uv = position - (half2)colRow; // sub-coordinate, top-left is (0,0)
+        half2 invUV = 1.0f - uv;
+        int index = colRow.y * verticesPerRow + colRow.x;
 
         float oldHeight;
         float2 gradient;
         GetHeightAndGradient(uv, index, oldHeight, gradient);
-
+        
         // Update flow direction based on gradient
         // Inertia determines how much gradient (terrain directed angle) is taken into account
-         float2 newDir = dir * inertia - gradient * (1.02 - inertia); // I try to avoid 1 - inertia because it could equate to 0
-         float dirLengthSqr = dot(newDir,newDir);
+        float2 newDir = dir * inertia - gradient * (1.02 - inertia); // I try to avoid 1 - inertia because it could equate to 0
+        float dirLengthSqr = dot(newDir,newDir);
         if (dirLengthSqr < EPSILON) return; // We're done if the drop isn't moving
         dir = normalize(newDir) * .5f; // Normalize: Drop moves fixed distance of .5f, so erosion is evenly distributed
         
         // Data for the next position is found
-         float2 newPos = position + dir;
+        float2 newPos = position + dir;
         float newHeight = SampleHeight(newPos, oldHeight);
         float heightDif = newHeight - oldHeight;
 
@@ -135,7 +137,7 @@ void SimulateDrop(int x, int y)
         if (heightDif >= 0.0f || sediment >= dropCapacity)
         {
             // Vectorized weight calculation
-             float4 weights = float4(
+            float4 weights = float4(
                 invUV.x * invUV.y, // TL
                 uv.x * invUV.y,    // TR  
                 invUV.x * uv.y,    // BL
@@ -143,12 +145,12 @@ void SimulateDrop(int x, int y)
             );
 
             // Both what would happen if the drop is ascending and descending are calculated, so we can do a branchless conditional
-             float depositAscending = min(sediment, heightDif); // Either completely fill pit at oldPos or deposit all sediment there
-             float depositSurplus = (sediment - dropCapacity) * depositionRate; // A percentage of the surplus sediment is dropped  
+            float depositAscending = min(sediment, heightDif); // Either completely fill pit at oldPos or deposit all sediment there
+            float depositSurplus = (sediment - dropCapacity) * depositionRate; // A percentage of the surplus sediment is dropped  
 
             // This is essentially a bool, 0 if descending, 1 if ascending. Helps with branchless conditionals
-             float isAscending = saturate(sign(heightDif));
-             half depositAmount = min(sediment, max(lerp(depositSurplus, depositAscending, isAscending), 0));
+            float isAscending = saturate(sign(heightDif));
+            half depositAmount = min(sediment, max(lerp(depositSurplus, depositAscending, isAscending), 0));
             
             // Remove the lost sediment from the drop
             sediment -= depositAmount;
@@ -166,15 +168,17 @@ void SimulateDrop(int x, int y)
             half erosionAmount = min((dropCapacity - sediment) * softness, -heightDif);
             sediment += erosionAmount;
             half weightedErosionAmount = erosionAmount * weightedErosionFactor; // Skipping a calculation that would be in the loop
-             float radiusSquared = (float)(radius * radius);
             
             [loop]
             for (uint vert = 0; vert < brushLength; vert++)
             {
-                 int2 offset = colRow + sharedBrush[vert];
+                int2 offset = colRow + sharedBrush[vert];
                 if (any(offset < 0) || any(offset > resolution)) continue;
-                 float2 distance = position - offset;
-                 float dSquared = dot(distance, distance);
+
+                // Utilizing already established position variable to quickly go straight to dSquared
+                float dx = position.x - offset.x;
+                float dy = position.y - offset.y;
+                float dSquared = dx * dx + dy * dy;
 
                 // If the point isn't in bounds of the map, or it's outside the radius of the drop, we continue
                 // Purposefully branching here tends to be faster than the computations and global scattered write below
@@ -183,7 +187,7 @@ void SimulateDrop(int x, int y)
                 // The overall weight of this drop decreases the further the drop is from the point
                 // This helps give more erosion close to the drop, which can result in formations like ridges and rivers
                 half weight = radius - sqrt(dSquared);
-                 int idx = (offset.y * verticesPerRow + offset.x);
+                int idx = (offset.y * verticesPerRow + offset.x);
 
                 // Erode the terrain by the proper amount. 
                 _HeightBuffer[idx] -= weightedErosionAmount * weight;
@@ -208,25 +212,45 @@ uint PCG(uint input)
     return (word >> 22u) ^ word;
 }
 
-[numthreads(64,1,1)]
-void CSMain (uint3 id : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
+[numthreads(TILE_SIZE,TILE_SIZE,1)]
+void CSMain (uint3 groupID : SV_GroupID, uint groupIndex : SV_GroupIndex)
 {
-    // Preload brush into shared memory, This will be much faster than trying to access the buffer several times later
-    [unroll(2)]
-    for (uint i = groupIndex; i < brushLength; i += 64) {
-        int2 b = _BrushBuffer[i];
-        sharedBrush[i] = b;
+    uint threadsPerTile = TILE_SIZE * TILE_SIZE;
+
+    // Load brush into group shared memory
+    for (uint idx = groupIndex; idx < brushLength; idx += threadsPerTile)
+    {
+        sharedBrush[idx] = _BrushBuffer[idx];
     }
-    GroupMemoryBarrierWithGroupSync(); // sync all threads in group after writing to group shared memory
-    if (id.x >= numRainDrops) return; // Don't need to iterate on
+    GroupMemoryBarrierWithGroupSync();
+    
+    // Calculate tile info
+    uint numTilesPerRow = (verticesPerRow + TILE_SIZE - 1) / (uint)TILE_SIZE;
+    uint totalTiles = numTilesPerRow * numTilesPerRow;
+    uint tileIndex = groupID.y * numTilesPerRow + groupID.x;
+    
+    // Distribute drops across tiles
+    uint dropsPerTile = numRainDrops / totalTiles;
+    uint remainingDrops = numRainDrops % totalTiles;
+    uint dropsThisTile = dropsPerTile + (tileIndex < remainingDrops ? 1 : 0); // Part of remainder may be added
 
-    // Use seed to get a hash
-    uint hashVal = PCG(_seed + id.x);
+    // Part of the index for this tile is generated outside the loop so that the remainder can be applied to it
+    // Because we process more than 1 drop per thread (normally), we need more than just a seed, this handles that
+    uint baseGlobalDropIndex = tileIndex * dropsPerTile + min(tileIndex, remainingDrops);
 
-    // Put seed within terrain boundaries, excluding right and bottom edges
-    int x = hashVal % resolution; // Upper bits for x position
-    int y = (hashVal >> 16) % resolution; // Lower Bits for y position
+    // We process for the whole tile instead of just the thread so that leftover raindrops don't form a very
+    // obvious visual straight line across the grid as the user increases the number of raindrops
+    for (uint i = groupIndex; i < dropsThisTile; i += threadsPerTile)
+    {
+        // Generate global position
+        uint dropSeed = _seed ^ ((baseGlobalDropIndex + i) * 19349663u); // Large prime to spread values
+        uint hashX = PCG(dropSeed);
+        uint hashY = PCG(dropSeed + 1u); // Simple offset to de-correlate X and Y
 
-    // Converting to an index and starting the drop at that index
-    SimulateDrop(x, y);
+        // Scale hash to resolution range
+        uint x = hashX % resolution;
+        uint y = hashY % resolution;
+        
+        SimulateDrop(x, y);
+    }
 }

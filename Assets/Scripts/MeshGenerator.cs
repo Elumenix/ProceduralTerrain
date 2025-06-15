@@ -129,6 +129,7 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int BrushLength = Shader.PropertyToID("brushLength");
     private static readonly int VerticesPerRow = Shader.PropertyToID("verticesPerRow");
     private static readonly int WeightedErosionFactor = Shader.PropertyToID("weightedErosionFactor");
+    private static readonly int RadiusSquared = Shader.PropertyToID("radiusSquared");
 
     #endregion
 
@@ -367,9 +368,12 @@ public class MeshGenerator : MonoBehaviour
         erosionShader.SetInt(BrushLength, brush.Count);
         erosionShader.SetInt(VerticesPerRow, dim + 1);
         erosionShader.SetFloat(WeightedErosionFactor, 1.0f / brush.Count);
+        erosionShader.SetFloat(RadiusSquared, (float)(radius * radius));
+
+        int TileRes = Mathf.CeilToInt((resolution) / 32.0f);
         
         // Execute erosion shader
-        erosionShader.Dispatch(0, Mathf.CeilToInt(numRainDrops / 64.0f), 1, 1);
+        erosionShader.Dispatch(0, TileRes, TileRes, 1);
     }
     
     private void SetUpMaterials()
