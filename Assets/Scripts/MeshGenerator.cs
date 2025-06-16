@@ -5,6 +5,8 @@ using UnityEngine.UI;
 
 public class MeshGenerator : MonoBehaviour
 {
+    private const int tileSize = 8;
+    
     // Most variables are changeable within the inspector. They aren't constrained to these values when changed through code
     // TRACKING VARIABLES
     public Noise noise;
@@ -130,6 +132,11 @@ public class MeshGenerator : MonoBehaviour
     private static readonly int VerticesPerRow = Shader.PropertyToID("verticesPerRow");
     private static readonly int WeightedErosionFactor = Shader.PropertyToID("weightedErosionFactor");
     private static readonly int RadiusSquared = Shader.PropertyToID("radiusSquared");
+    private static readonly int ThreadsPerTile = Shader.PropertyToID("threadsPerTile");
+    private static readonly int NumTilesPerRow = Shader.PropertyToID("numTilesPerRow");
+    private static readonly int TotalTiles = Shader.PropertyToID("totalTiles");
+    private static readonly int DropsPerTile = Shader.PropertyToID("dropsPerTile");
+    private static readonly int RemainingDrops = Shader.PropertyToID("remainingDrops");
 
     #endregion
 
@@ -368,9 +375,20 @@ public class MeshGenerator : MonoBehaviour
         erosionShader.SetInt(BrushLength, brush.Count);
         erosionShader.SetInt(VerticesPerRow, dim + 1);
         erosionShader.SetFloat(WeightedErosionFactor, 1.0f / brush.Count);
-        erosionShader.SetFloat(RadiusSquared, (float)(radius * radius));
+        erosionShader.SetFloat(RadiusSquared, radius * radius);
 
-        int TileRes = Mathf.CeilToInt((resolution) / 32.0f);
+        // Calculate tile information so every thread doesn't need to do it
+        int TileRes = Mathf.CeilToInt(resolution / (float)tileSize);
+        int threadsPerTile = tileSize * tileSize;
+        int numTilesPerRow = ((dim + 1) + tileSize - 1) / tileSize;
+        int totalTiles = numTilesPerRow * numTilesPerRow;
+        int dropsPerTile = numRainDrops / totalTiles;
+        int remainingDrops = numRainDrops % totalTiles;
+        erosionShader.SetInt(ThreadsPerTile, threadsPerTile);
+        erosionShader.SetInt(NumTilesPerRow, numTilesPerRow);
+        erosionShader.SetInt(TotalTiles, totalTiles);
+        erosionShader.SetInt(DropsPerTile, dropsPerTile);
+        erosionShader.SetInt(RemainingDrops, remainingDrops);
         
         // Execute erosion shader
         erosionShader.Dispatch(0, TileRes, TileRes, 1);

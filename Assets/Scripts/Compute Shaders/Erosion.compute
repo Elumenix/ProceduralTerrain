@@ -3,7 +3,7 @@
 #define EPSILON 1e-6
 #define PI 3.14159265
 #define MAX_BRUSH_LENGTH 81 // A radius of 5 would be 81.
-#define TILE_SIZE 32
+#define TILE_SIZE 8
 
 // The following code makes two assumptions
 // 1. This code is Single Execution (Not runtime code, or running every frame)
@@ -32,6 +32,11 @@ uint brushLength;
 int verticesPerRow;
 float weightedErosionFactor;
 float radiusSquared;
+uint threadsPerTile;
+uint numTilesPerRow;
+uint totalTiles;
+uint dropsPerTile;
+uint remainingDrops;
 
 // Group shared memory
 groupshared int2 sharedBrush[MAX_BRUSH_LENGTH];
@@ -215,8 +220,6 @@ uint PCG(uint input)
 [numthreads(TILE_SIZE,TILE_SIZE,1)]
 void CSMain (uint3 groupID : SV_GroupID, uint groupIndex : SV_GroupIndex)
 {
-    uint threadsPerTile = TILE_SIZE * TILE_SIZE;
-
     // Load brush into group shared memory
     for (uint idx = groupIndex; idx < brushLength; idx += threadsPerTile)
     {
@@ -225,13 +228,7 @@ void CSMain (uint3 groupID : SV_GroupID, uint groupIndex : SV_GroupIndex)
     GroupMemoryBarrierWithGroupSync();
     
     // Calculate tile info
-    uint numTilesPerRow = (verticesPerRow + TILE_SIZE - 1) / (uint)TILE_SIZE;
-    uint totalTiles = numTilesPerRow * numTilesPerRow;
     uint tileIndex = groupID.y * numTilesPerRow + groupID.x;
-    
-    // Distribute drops across tiles
-    uint dropsPerTile = numRainDrops / totalTiles;
-    uint remainingDrops = numRainDrops % totalTiles;
     uint dropsThisTile = dropsPerTile + (tileIndex < remainingDrops ? 1 : 0); // Part of remainder may be added
 
     // Part of the index for this tile is generated outside the loop so that the remainder can be applied to it
@@ -244,12 +241,12 @@ void CSMain (uint3 groupID : SV_GroupID, uint groupIndex : SV_GroupIndex)
     {
         // Generate global position
         uint dropSeed = _seed ^ ((baseGlobalDropIndex + i) * 19349663u); // Large prime to spread values
-        uint hashX = PCG(dropSeed);
-        uint hashY = PCG(dropSeed + 1u); // Simple offset to de-correlate X and Y
+        uint hash = PCG(dropSeed);
 
         // Scale hash to resolution range
-        uint x = hashX % resolution;
-        uint y = hashY % resolution;
+        uint x = hash % verticesPerRow;
+        // Upper part of hash is XOR and rotated since it usually changes much more slowly
+        uint y = ((hash >> 16) ^ (hash * 0x9E3779B9u)) % verticesPerRow; 
         
         SimulateDrop(x, y);
     }
